@@ -24,11 +24,11 @@
 - [ ] 3.5 `тестер`: local-folder connector tests — walk fixture folder, exclusions
 - [ ] 3.6 `кодер`: local-folder connector (shared exclusion module with git)
 
-## 4. Import pipeline (tests first)
+## 4. Import pipeline + storage strategies (tests first)
 
-- [ ] 4.1 `тестер`: stage-pipeline tests — PipelineStage protocol contract, STAGE_REGISTRY ordering (fetch → persist), ctx passing; worker tests — RawItem → fake S3 (moto) upload + `imported_files` upsert; idempotency: re-import same content → no re-upload
-- [ ] 4.2 `кодер`: stage-based worker (PipelineStage protocol + registry + ImportContext; fetch stage, persist stage; uploads, upserts, imports status updates, error capture)
-- [ ] 4.3 `тестер`: end-to-end — register local fixture source via API → enqueue → worker (celery eager mode) → imported_files rows + files in S3
+- [ ] 4.1 `тестер`: stage-pipeline tests — PipelineStage protocol contract, STAGE_REGISTRY ordering (fetch → persist), ctx passing; strategy tests: `git_reference` (no content uploads, manifest only, blob SHA rows) vs `full_copy` (content uploaded); idempotency: re-import same content → no re-upload
+- [ ] 4.2 `кодер`: stage-based worker (PipelineStage protocol + registry + ImportContext; fetch stage; persist stage delegating to StorageStrategy registry: `git_reference`, `full_copy`; strategy override from source config; imports status updates, error capture)
+- [ ] 4.3 `тестер`: end-to-end — register local fixture source via API → enqueue → worker (celery eager mode) → imported_files rows + files in S3; git fixture source with reference strategy → manifest in S3, no content copies
 
 ## 5. Web UI
 

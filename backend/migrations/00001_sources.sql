@@ -23,12 +23,13 @@ CREATE INDEX idx_imports_source_id ON imports (source_id);
 CREATE TABLE imported_files (
     id BIGSERIAL PRIMARY KEY,
     source_id BIGINT NOT NULL REFERENCES sources(id),
+    branch TEXT NOT NULL DEFAULT '',
     path TEXT NOT NULL,
     size_bytes BIGINT,
     storage_key TEXT NOT NULL,
     content_hash TEXT NOT NULL,
     imported_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (source_id, path)
+    UNIQUE (source_id, branch, path)
 );
 
 -- +goose Down

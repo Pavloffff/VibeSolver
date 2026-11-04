@@ -96,7 +96,7 @@ When adding a new source connector, a new agent, or a new metric — write tests
 - Conventional Commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
 - Small, focused commits. One logical change per commit.
 - Never force-push, never amend published commits, never commit secrets.
-- Do not commit unless explicitly asked by the user.
+- NEVER commit or push without the user's review first. Workflow: finish work → report what changed → user reviews and says "commit" → only then commit+push. A commit/push instruction authorizes that specific changeset only.
 
 ## Workflow (Spec-Driven Development)
 

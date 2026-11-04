@@ -66,13 +66,19 @@ The system SHALL expose `GET /api/v1/connectors` returning the registry contents
 
 ### Requirement: git snapshot fetch
 
-The git connector SHALL clone the repository with `--depth 1` into a temp dir, checkout the configured branch, and yield every non-ignored text file as RawItem (binary files excluded by extension list; `.gitignore` rules respected).
+The git connector SHALL clone the repository with `--depth 1` into a temp dir and yield every non-ignored text file of the configured branches as RawItem (binary files excluded by extension list; `.gitignore` rules respected). Config: `{"url": ..., "branches": ["main", "release-1.0"], "token_ref": ...}` — `branches` is a list, defaulting to the repository's default branch when absent. Each yielded RawItem SHALL carry `branch` in meta. The branch list is data (config), not a closed set — masks like `release-*` may be added later without schema changes.
 
 #### Scenario: import a public repo
 
-- **GIVEN** source config `{"url": "<any public git url>", "branch": "main"}`
+- **GIVEN** source config `{"url": "<any public git url>", "branches": ["main"]}`
 - **WHEN** import task runs
-- **THEN** all tracked text files are yielded with correct relative paths, and the temp dir is removed afterwards
+- **THEN** all tracked text files of branch `main` are yielded with correct relative paths and `meta.branch == "main"`, and the temp dir is removed afterwards
+
+#### Scenario: multi-branch import
+
+- **GIVEN** source config `{"url": ..., "branches": ["main", "dev"]}`
+- **WHEN** import task runs
+- **THEN** files from both branches are yielded, each tagged with its branch
 
 ### Requirement: token handling
 
@@ -106,15 +112,39 @@ The system SHALL provide svn and hg connectors that: validate config shape, are 
 
 ### Requirement: stage-based pipeline
 
-The import SHALL run as an ordered pipeline of stages from a stage registry: **fetch** (connector yields RawItems) → **persist** (raw files to SeaweedFS, rows to Postgres). The pipeline SHALL accept additional transform stages registered between fetch and persist without worker changes (empty in this change — future chunking/embedding/docstring stages).
-
-### Requirement: persist snapshot
-
-The persist stage SHALL upload each RawItem to SeaweedFS (S3 API, bucket `raw`) and insert an `imported_files` row (source_id, path, size, storage_key, content_hash). A completed import SHALL set the source's `last_import` status.
+The import SHALL run as an ordered pipeline of stages from a stage registry: **fetch** (connector yields RawItems) → **persist** (delegates to a storage strategy). The pipeline SHALL accept additional transform stages registered between fetch and persist without worker changes (empty in this change — future chunking/embedding stages).
 
 ### Requirement: idempotency
 
-Re-importing the same source SHALL re-fetch and overwrite (upsert by source_id + path, keyed on content_hash — unchanged files are not re-uploaded).
+Re-importing the same source SHALL re-fetch and overwrite (upsert by source_id + branch + path, keyed on content_hash — unchanged files are not re-uploaded).
+
+# Spec: storage-strategies
+
+## ADDED Requirements
+
+### Requirement: strategy registry
+
+Storage strategies SHALL be registered in a registry keyed by strategy name; the source config field `storage_strategy` overrides the connector's default. Adding a strategy SHALL not require changes to the pipeline or API.
+
+### Requirement: git_reference strategy (default for git)
+
+For a source with strategy `git_reference` the system SHALL NOT copy file content to object storage. It SHALL store per-file metadata in `imported_files` (path, branch, blob SHA in content_hash or dedicated column, size) and upload to SeaweedFS a single snapshot manifest (JSON: commit SHA, branches, per-branch file list with blob SHAs). Content for downstream stages SHALL be resolvable from the git repository by blob SHA.
+
+#### Scenario: git import with reference storage
+
+- **GIVEN** a git source with default strategy and branch `main` at commit `abc123`
+- **WHEN** import completes
+- **THEN** `imported_files` contains all text files of `main` with their blob SHAs, exactly one manifest object exists in bucket `raw`, and no file-content objects were uploaded
+
+### Requirement: full_copy strategy (default for local_folder)
+
+For a source with strategy `full_copy` the system SHALL upload every RawItem to SeaweedFS (S3 API, bucket `raw`) and insert an `imported_files` row (source_id, branch, path, size, storage_key, content_hash). A completed import SHALL set the source's `last_import` status.
+
+#### Scenario: local folder import
+
+- **GIVEN** a local_folder source
+- **WHEN** import completes
+- **THEN** every yielded file exists in bucket `raw` and has a row in `imported_files`
 
 # Spec: infra-local-remote
 

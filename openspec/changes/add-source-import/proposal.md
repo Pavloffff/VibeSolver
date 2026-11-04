@@ -43,7 +43,16 @@ Registered svn and hg connectors that validate config and raise `NotImplementedE
 
 ### Capability: import-pipeline
 
-Stage-based import pipeline ( extensibility-first): a Celery worker consumes an import task and runs a registry of stages over each source snapshot — **fetch** (connector) → **transforms** (empty in this change; future chunking/embedding/docstring stages plug in here without core changes) → **persist** (raw files to SeaweedFS bucket `raw` + `imported_files` rows in Postgres). Idempotent re-import (same source → re-fetch, upsert by source_id + path, keyed on content_hash — unchanged files are not re-uploaded). No chunking/embedding in this change — the pipeline shape is the point.
+Stage-based import pipeline (extensibility-first): a Celery worker consumes an import task and runs a registry of stages over each source snapshot — **fetch** (connector) → **transforms** (empty in this change; future chunking/embedding/docstring stages plug in here without core changes) → **persist** (delegates to a storage strategy). Idempotent re-import (same source → re-fetch, upsert keyed on content_hash — unchanged files are not re-uploaded). No chunking/embedding in this change — the pipeline shape is the point.
+
+### Capability: storage-strategies
+
+Storage is per-source and registry-driven (same extensibility philosophy as connectors):
+
+- `git_reference` (default for git): raw file content is NOT copied — the snapshot stays reproducible via commit SHA, git itself is the source of truth. PostgreSQL stores per-file metadata (path, blob SHA, branch, size, content_hash); SeaweedFS stores only the snapshot manifest (JSON: commit, branches, file list with SHAs). A later chunking stage reads content from the git clone by SHA.
+- `full_copy` (default for local_folder, explicit option for git): full immutable copy of files to SeaweedFS bucket `raw` + the same PG metadata. Required for sources without intrinsic immutability (local folders change/delete).
+
+The strategy is a config field on the source (overridable); the default is chosen by the connector. New source types can introduce new strategies without core changes.
 
 ## Capabilities with no changes
 
