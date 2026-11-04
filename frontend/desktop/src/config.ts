@@ -64,7 +64,7 @@ export function normalizeServerUrl(raw: string): string | null {
 }
 
 export function localApiUrl(): string {
-  return process.env.VIBESOLVER_LOCAL_API ?? 'http://localhost:8000';
+  return process.env.VIBESOLVER_LOCAL_API ?? 'http://localhost:8001';
 }
 
 export function resolveServerUrl(config: VibesolverConfig): string | null {

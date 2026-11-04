@@ -27,13 +27,13 @@ docker compose up -d
 
 | Сервис | Адрес | Назначение |
 |---|---|---|
-| Веб-интерфейс | http://localhost:8080 | основной UI |
-| API | http://localhost:8000 | REST API, Swagger: `/docs` |
+| Веб-интерфейс | http://localhost:8081 | основной UI |
+| API | http://localhost:8001 | REST API, Swagger: `/docs` |
 | S3 (SeaweedFS) | http://localhost:8333 | файловое хранилище (raw-файлы репозиториев) |
 | PostgreSQL | localhost:5432 | база данных (доступы из `.env`) |
 | Redis | localhost:6379 | очередь задач импорта |
 
-4. Откройте http://localhost:8080. При первом входе выберите режим:
+4. Откройте http://localhost:8081. При первом входе выберите режим:
 
 - **«Локально»** — инфраструктура уже поднята шагом 3;
 - **«На сервер»** — укажите адрес API удалённого сервера и нажмите «Проверить соединение».
@@ -97,7 +97,7 @@ docker compose down
 
 Переменные окружения (все опциональны, есть безопасные дефолты):
 
-- `VIBESOLVER_LOCAL_API` — адрес локального API для режима «Локально» (по умолчанию `http://localhost:8000`);
+- `VIBESOLVER_LOCAL_API` — адрес локального API для режима «Локально» (по умолчанию `http://localhost:8001`);
 - `ELECTRON_DEV_URL` — URL dev-сервера Vite: десктоп загрузит его вместо собранного бандла;
 - `VIBESOLVER_REPO_ROOT` — путь к корню репозитория для локального режима упакованного приложения (по умолчанию ищется вверх по дереву каталогов по файлу `docker-compose.yml`);
 - `VIBESOLVER_HEALTH_TIMEOUT_MS`, `VIBESOLVER_HEALTH_POLL_INTERVAL_MS`, `VIBESOLVER_HEALTH_REQUEST_TIMEOUT_MS` — таймауты ожидания сервера (по умолчанию 180000 / 3000 / 4000 мс).
@@ -117,7 +117,7 @@ uv sync
 uv run uvicorn app.handler.app:app --reload --port 8000
 ```
 
-Frontend (из папки `frontend/web`; dev-сервер проксирует `/api` на `http://localhost:8000`):
+Frontend (из папки `frontend/web`; dev-сервер проксирует `/api` на `http://localhost:8001`):
 
 ```
 npm install

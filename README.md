@@ -40,7 +40,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-После запуска: веб-интерфейс — http://localhost:8080, API — http://localhost:8000 (Swagger: `/docs`).
+После запуска: веб-интерфейс — http://localhost:8081, API — http://localhost:8001 (Swagger: `/docs`).
 
 ## Запуск и сборка
 

@@ -1,8 +1,10 @@
 ﻿import { useEffect, useState } from 'react'
 import { getApiClient, getErrorMessage } from '../../../shared/api/client'
 import type { ApiClient } from '../../../shared/api/client'
-import type { ConnectorInfo } from '../../../entities/source'
+import type { ConfigField, ConnectorInfo } from '../../../entities/source'
 import { useT } from '../../../shared/i18n'
+import { selectFolder } from '../../../shared/api/folderPicker'
+import { hasNativeFolderDialog } from '../../../shared/api/folderPicker'
 
 interface Props {
   api?: ApiClient
@@ -16,6 +18,7 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
   const [type, setType] = useState('')
   const [name, setName] = useState('')
   const [config, setConfig] = useState<Record<string, string>>({})
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -42,6 +45,18 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
 
   const setFieldValue = (fieldName: string, value: string) => {
     setConfig((prev) => ({ ...prev, [fieldName]: value }))
+    setFieldErrors((prev) => ({ ...prev, [fieldName]: '' }))
+  }
+
+  const pickFolder = async (field: ConfigField) => {
+    if (hasNativeFolderDialog()) {
+      const picked = await selectFolder()
+      if (picked !== null) {
+        setFieldValue(field.name, picked)
+      }
+      return
+    }
+    setFieldErrors((prev) => ({ ...prev, [field.name]: t('errors.browserNoPath') }))
   }
 
   const submit = async (event: React.FormEvent) => {
@@ -55,11 +70,16 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
       return
     }
     const fields = selected !== null ? selected.config_schema.fields : []
+    const missing: Record<string, string> = {}
     for (const field of fields) {
       if (field.required && !(config[field.name] ?? '').trim()) {
-        setError(t('errors.fillField', { field: field.label }))
-        return
+        missing[field.name] =
+          field.kind === 'folder' ? t('errors.chooseFolder') : t('errors.fillField', { field: field.label })
       }
+    }
+    if (Object.keys(missing).length > 0) {
+      setFieldErrors(missing)
+      return
     }
     setSaving(true)
     try {
@@ -72,6 +92,59 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
     }
   }
 
+  const renderField = (field: ConfigField) => {
+    const value = config[field.name] ?? ''
+    const fieldError = fieldErrors[field.name] ?? ''
+    const commonProps = {
+      value,
+      onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+        setFieldValue(field.name, event.target.value),
+    }
+    let control
+    if (field.kind === 'password') {
+      control = <input type="password" {...commonProps} />
+    } else if (field.kind === 'folder') {
+      control = (
+        <span className="folder-picker">
+          <input
+            type="text"
+            {...commonProps}
+            placeholder={t('sourceForm.folderOrServer')}
+            className={fieldError !== '' ? 'input-error' : undefined}
+          />
+          {hasNativeFolderDialog() && (
+            <button
+              type="button"
+              className="btn"
+              onClick={(event) => {
+                event.preventDefault()
+                void pickFolder(field)
+              }}
+            >
+              {t('sourceForm.browse')}
+            </button>
+          )}
+        </span>
+      )
+    } else {
+      control = (
+        <input
+          type="text"
+          {...commonProps}
+          placeholder={field.placeholder ?? t('sourceForm.pathPlaceholder')}
+        />
+      )
+    }
+    return (
+      <label key={field.name}>
+        {field.required ? `${field.label} *` : field.label}
+        {control}
+        {field.hint != null && field.hint !== '' && <small className="hint">{field.hint}</small>}
+        {fieldError !== '' && <small className="error">{fieldError}</small>}
+      </label>
+    )
+  }
+
   return (
     <form onSubmit={(event) => void submit(event)}>
       <label>
@@ -81,6 +154,7 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
           onChange={(event) => {
             setType(event.target.value)
             setConfig({})
+            setFieldErrors({})
           }}
         >
           <option value="">{t('sourceForm.typePlaceholder')}</option>
@@ -101,26 +175,7 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
           placeholder={t('sourceForm.namePlaceholder')}
         />
       </label>
-      {selected !== null &&
-        selected.config_schema.fields.map((field) => (
-          <label key={field.name}>
-            {field.required ? `${field.label} *` : field.label}
-            {field.kind === 'password' ? (
-              <input
-                type="password"
-                value={config[field.name] ?? ''}
-                onChange={(event) => setFieldValue(field.name, event.target.value)}
-              />
-            ) : (
-              <input
-                type="text"
-                value={config[field.name] ?? ''}
-                placeholder={field.kind === 'path' ? t('sourceForm.pathPlaceholder') : undefined}
-                onChange={(event) => setFieldValue(field.name, event.target.value)}
-              />
-            )}
-          </label>
-        ))}
+      {selected !== null && selected.config_schema.fields.map(renderField)}
       {error !== null && <p className="error">{error}</p>}
       <div className="modal-actions">
         <button type="button" className="btn" onClick={onClose}>

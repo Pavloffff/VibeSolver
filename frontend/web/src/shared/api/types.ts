@@ -11,13 +11,15 @@ export interface Source {
   last_import: LastImport | null
 }
 
-export type ConfigFieldKind = 'text' | 'path' | 'password'
+export type ConfigFieldKind = 'text' | 'path' | 'password' | 'folder'
 
 export interface ConfigField {
   name: string
   label: string
   kind: ConfigFieldKind
   required: boolean
+  hint?: string | null
+  placeholder?: string | null
 }
 
 export interface ConfigSchema {

@@ -6,7 +6,7 @@ declare global {
   }
 }
 
-export const DEFAULT_SERVER_URL = 'http://localhost:8000'
+export const DEFAULT_SERVER_URL = 'http://localhost:8001'
 
 export function getApiBaseUrl(): string {
   if (typeof window !== 'undefined' && window.__VIBESOLVER_API_URL__) {

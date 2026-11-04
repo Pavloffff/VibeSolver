@@ -16,7 +16,8 @@ Detailed project context: `openspec/project.md`. Workflow conventions: `openspec
 Two pillars for every decision:
 
 1. **User convenience** — the product must be easy for a non-technical user: one-click local mode, clear errors, web and desktop parity.
-2. **Extensibility** — never hardcode closed sets of options (connector types, source kinds, chunk kinds, routes). Use registries/SPIs open for extension without core changes (open-closed). No CHECK-constraint-style enums in the DB where growth is expected — enums as data (registry/config), not as schema.
+2. **Extensibility** — never hardcode closed sets of options (connector types, source kinds, chunk kinds, routes). Use registries/SPIs open for extension without core changes (open-closed). No CHECK-constraint-style enums in the DB where growth is expected — enums as data (registry/config), not as schema. Hidden-but-working features are OK: e.g. git multi-branch import works in the backend (config key `branches`), but the field is NOT exposed in connector `config_fields` until the product is ready (user decision — import defaults to the default branch).
+3. **User-first UI wording** — product terms are user-facing: "Projects" (not "Sources"), "Remote server" (not "On server"), "Local" implies the bundled API URL with zero configuration. Fields self-explain: password fields carry a `hint` with instructions (e.g. how to obtain a PAT), path fields offer a folder picker (native dialog in desktop, webkitdirectory fallback in browser). Backend validation errors must be human-readable ("unknown repo (clone failed): <url>"), never raw tracebacks.
 
 ## Hard Rules
 

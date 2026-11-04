@@ -17,6 +17,7 @@ export interface VibesolverBridge {
   checkHealth(serverUrl: string): Promise<BridgeResult>
   getAppVersion(): Promise<string>
   openSettings(): void
+  selectFolder?(): Promise<string | null>
 }
 
 declare global {

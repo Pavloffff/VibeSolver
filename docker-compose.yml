@@ -96,7 +96,7 @@ services:
     <<: *backend
     command: api
     ports:
-      - "8000:8000"
+      - "8001:8000"
 
   worker:
     <<: *backend
@@ -105,7 +105,7 @@ services:
   web:
     build: ./frontend/web
     ports:
-      - "8080:8080"
+      - "8081:8080"
     depends_on:
       - api
 

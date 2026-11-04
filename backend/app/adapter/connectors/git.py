@@ -23,18 +23,23 @@ class GitConnector(BaseConnector):
     type: ClassVar[str] = "git"
     ready: ClassVar[bool] = True
     config_fields: ClassVar[list[ConfigField]] = [
-        ConfigField(name="url", label="Repository URL", kind="text", required=True),
         ConfigField(
-            name="branches",
-            label="Branches (comma-separated)",
+            name="url",
+            label="Repository URL",
             kind="text",
-            required=False,
+            required=True,
+            placeholder="https://github.com/owner/repo.git",
         ),
         ConfigField(
             name="token_ref",
-            label="Access token reference",
+            label="Access token (PAT)",
             kind="password",
             required=False,
+            hint=(
+                "Only for private repositories. GitHub: Settings -> Developer settings -> "
+                "Personal access tokens -> Generate new token (scope: repo). GitLab: "
+                "Preferences -> Access tokens (scope: read_api, read_repository)."
+            ),
         ),
     ]
 
@@ -75,9 +80,7 @@ def _snapshot_remote(url: str, branches: list[str] | None, base: Path) -> Iterat
         clone_dir = base / "clone"
         clone_dir.mkdir(parents=True, exist_ok=True)
         try:
-            clone(url, str(clone_dir), depth=1)
-            with Repo(str(clone_dir)) as repo:
-                yield from _snapshot_repo(repo, None)
+            yield from _clone_and_snapshot(url, None, clone_dir)
         finally:
             shutil.rmtree(clone_dir, ignore_errors=True)
         return
@@ -85,14 +88,25 @@ def _snapshot_remote(url: str, branches: list[str] | None, base: Path) -> Iterat
         clone_dir = base / f"clone-{index}"
         clone_dir.mkdir(parents=True, exist_ok=True)
         try:
-            try:
-                clone(url, str(clone_dir), depth=1, branch=branch)
-            except ValueError as exc:
-                raise RuntimeError(f"branch not found: {branch}") from exc
-            with Repo(str(clone_dir)) as repo:
-                yield from _snapshot_repo(repo, [branch])
+            yield from _clone_and_snapshot(url, branch, clone_dir)
         finally:
             shutil.rmtree(clone_dir, ignore_errors=True)
+
+
+def _clone_and_snapshot(
+    url: str, branch: str | None, clone_dir: Path
+) -> Iterator[RawItem]:
+    try:
+        if branch is None:
+            clone(url, str(clone_dir), depth=1)
+        else:
+            clone(url, str(clone_dir), depth=1, branch=branch)
+    except ValueError as exc:
+        raise RuntimeError(f"branch not found: {branch}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"unknown repo (clone failed): {url}") from exc
+    with Repo(str(clone_dir)) as repo:
+        yield from _snapshot_repo(repo, [branch] if branch is not None else None)
 
 
 def _is_branch_list(value: object) -> bool:

@@ -36,8 +36,10 @@ class QueueUnavailableError(RuntimeError):
 class ConfigField(BaseModel):
     name: str
     label: str
-    kind: Literal["text", "path", "password"]
+    kind: Literal["text", "path", "password", "folder"]
     required: bool
+    hint: str | None = None
+    placeholder: str | None = None
 
 
 @dataclass(slots=True)

@@ -16,7 +16,7 @@ describe('App mode screen', () => {
       </I18nProvider>,
     )
     expect(screen.queryByText('Choose the working mode')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Sources' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Projects' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
   })
 

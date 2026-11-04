@@ -18,7 +18,13 @@ class LocalFolderConnector(BaseConnector):
     type: ClassVar[str] = "local_folder"
     ready: ClassVar[bool] = True
     config_fields: ClassVar[list[ConfigField]] = [
-        ConfigField(name="path", label="Folder path", kind="path", required=True),
+        ConfigField(
+            name="path",
+            label="Folder on your computer",
+            kind="folder",
+            required=True,
+            hint="The folder will be imported recursively (binaries and service folders are skipped)",
+        ),
     ]
 
     def validate_config(self, config: dict[str, Any]) -> None:
