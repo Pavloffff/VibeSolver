@@ -1,0 +1,158 @@
+# Запуск и сборка VibeSolver
+
+Подробные инструкции по запуску, сборке и dev-режиму. Краткая версия — в корневом `README.md`.
+
+## Запуск: веб-интерфейс (Docker)
+
+1. Склонируйте репозиторий и перейдите в него:
+
+```
+git clone git@github.com:Pavloffff/VibeSolver.git
+cd VibeSolver
+```
+
+2. Создайте файл окружения из шаблона:
+
+```
+cp .env.example .env
+```
+
+3. Поднимите все сервисы:
+
+```
+docker compose up -d
+```
+
+Поднимаются:
+
+| Сервис | Адрес | Назначение |
+|---|---|---|
+| Веб-интерфейс | http://localhost:8080 | основной UI |
+| API | http://localhost:8000 | REST API, Swagger: `/docs` |
+| S3 (SeaweedFS) | http://localhost:8333 | файловое хранилище (raw-файлы репозиториев) |
+| PostgreSQL | localhost:5432 | база данных (доступы из `.env`) |
+| Redis | localhost:6379 | очередь задач импорта |
+
+4. Откройте http://localhost:8080. При первом входе выберите режим:
+
+- **«Локально»** — инфраструктура уже поднята шагом 3;
+- **«На сервер»** — укажите адрес API удалённого сервера и нажмите «Проверить соединение».
+
+Язык интерфейса: «Настройки» → English / Русский / 中文 (по умолчанию English).
+
+Остановить всё:
+
+```
+docker compose down
+```
+
+## Запуск: десктоп-приложение
+
+Соберите установщик для вашей ОС (см. «Сборка») и запустите файл из `build/dist`:
+
+- Windows: `VibeSolver-Setup-<версия>.exe`
+- Linux: `VibeSolver-<версия>.AppImage`
+- macOS: `VibeSolver-<версия>.dmg`
+
+При первом запуске — экран настройки:
+
+1. Выберите язык интерфейса.
+2. Выберите режим:
+   - **«Локально»** — приложение само поднимет инфраструктуру в фоне (`docker compose up -d` из корня репозитория) и дождётся готовности сервера. Требуется установленный и запущенный Docker; без него появится подсказка со ссылкой на установку. Нужны файлы `compose.yml` и `.env` из корня репозитория (для упакованной установки путь задаётся переменной `VIBESOLVER_REPO_ROOT`).
+   - **«Подключиться к серверу»** — введите адрес API (например, `http://<адрес-сервера>:8000`) и проверьте соединение. Локальная инфраструктура не поднимается.
+3. Нажмите «Начать работу».
+
+Настройки (режим, адрес, язык) меняются позже в приложении: вкладка «Настройки». Все параметры хранятся в конфиге приложения (userData), в установщик ничего не «запекается».
+
+## Сборка
+
+Сборка под вашу ОС запускается скриптом в корне репозитория. Перед упаковкой скрипт прогоняет все проверки: backend (pytest, ruff, mypy) и frontend (eslint, vitest, build) — при любой ошибке сборка останавливается.
+
+**Windows** (PowerShell):
+
+```
+.\build-windows.ps1
+```
+
+**Linux**:
+
+```
+./build-linux.sh
+```
+
+**macOS**:
+
+```
+./build-mac.sh
+```
+
+Готовые артефакты кладутся в `build/dist`.
+
+Требования к машине сборки:
+
+- Docker (для инфраструктуры и образа backend)
+- Node.js и npm (frontend)
+- Python 3.12+ и uv (backend)
+- macOS-сборка (.dmg) выполняется только на macOS — ограничение electron-builder; AppImage — только на Linux
+
+Переменные окружения (все опциональны, есть безопасные дефолты):
+
+- `VIBESOLVER_LOCAL_API` — адрес локального API для режима «Локально» (по умолчанию `http://localhost:8000`);
+- `ELECTRON_DEV_URL` — URL dev-сервера Vite: десктоп загрузит его вместо собранного бандла;
+- `VIBESOLVER_REPO_ROOT` — путь к корню репозитория для локального режима упакованного приложения (по умолчанию ищется вверх по дереву каталогов по файлу `compose.yml`);
+- `VIBESOLVER_HEALTH_TIMEOUT_MS`, `VIBESOLVER_HEALTH_POLL_INTERVAL_MS`, `VIBESOLVER_HEALTH_REQUEST_TIMEOUT_MS` — таймауты ожидания сервера (по умолчанию 180000 / 3000 / 4000 мс).
+
+## Dev-режим (без пересборки Docker)
+
+Поднимите только инфраструктуру, код запускайте локально с автоперезагрузкой:
+
+```
+docker compose up -d postgres redis
+```
+
+Backend (из папки `backend`):
+
+```
+uv sync
+uv run uvicorn app.api.main:app --reload --port 8000
+```
+
+Frontend (из папки `frontend/web`; dev-сервер проксирует `/api` на `http://localhost:8000`):
+
+```
+npm install
+npm run dev
+```
+
+Десктоп в dev-режиме (из папки `frontend/desktop`) — грузит dev-сервер Vite:
+
+```
+npm install
+npm run build
+$env:ELECTRON_DEV_URL="http://localhost:5173"   # Linux/macOS: export ELECTRON_DEV_URL=...
+npx electron .
+```
+
+## Проверки
+
+Backend (из `backend`):
+
+```
+uv run pytest
+uv run ruff check .
+uv run mypy app
+```
+
+Frontend (из `frontend/web`):
+
+```
+npm run lint
+npm run test
+npm run build
+```
+
+Десктоп (из `frontend/desktop`):
+
+```
+npx tsc -p tsconfig.json --noEmit
+```
