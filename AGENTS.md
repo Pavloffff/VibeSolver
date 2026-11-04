@@ -11,6 +11,13 @@ VibeSolver is a multi-agent system for triaging and resolving IT support tickets
 
 Detailed project context: `openspec/project.md`. Workflow conventions: `openspec/AGENTS.md`.
 
+## Project Philosophy
+
+Two pillars for every decision:
+
+1. **User convenience** — the product must be easy for a non-technical user: one-click local mode, clear errors, web and desktop parity.
+2. **Extensibility** — never hardcode closed sets of options (connector types, source kinds, chunk kinds, routes). Use registries/SPIs open for extension without core changes (open-closed). No CHECK-constraint-style enums in the DB where growth is expected — enums as data (registry/config), not as schema.
+
 ## Tech Stack
 
 | Layer | Tech |
@@ -37,7 +44,7 @@ uv run ruff check .             # lint
 uv run ruff format .            # format
 uv run mypy app                 # typecheck
 
-# Frontend (source/web/)
+# Frontend (frontend/web/)
 npm ci
 npm run build
 npm run lint
@@ -47,8 +54,8 @@ npm test
 docker compose up -d            # postgres+pgvector, redis, seaweedfs, langfuse
 docker compose up api worker    # app services
 
-# Migrations
-uv run alembic upgrade head
+# Migrations (goose; also run by the api container entrypoint)
+goose -dir backend/migrations postgres "$VIBESOLVER_DATABASE_URL" up
 ```
 
 When adding a new source connector, a new agent, or a new metric — write tests first (TDD). Tests must fail before implementation exists.
@@ -105,13 +112,19 @@ Rules of thumb:
 
 ```
 openspec/          # spec-driven development: project.md, changes/, specs archive
-source/
-  web/             # React frontend
-  api/             # FastAPI app
-  workers/         # Celery workers: ingest, agents
-  agents/          # LangGraph graph definitions, agent prompts
-  storage/         # pgvector, SeaweedFS clients, migrations
-  sandbox/         # sandbox executor API
+backend/
+  app/
+    api/           # FastAPI app factory, routes
+    connectors/    # source connectors, CONNECTOR_REGISTRY
+    workers/       # Celery app, import tasks
+    storage/       # SeaweedFS (S3) client helpers
+    core/          # settings
+  migrations/      # goose SQL migrations
+  tests/           # backend tests
+frontend/
+  web/             # Vite + React + TS frontend
+  desktop/         # Electron wrapper around frontend/web
+build/             # per-platform build/start helpers
+infra/             # docker-compose assets (seaweedfs s3 config)
 docs/              # architecture decisions (C4), diagrams
-tests/             # backend tests
 ```

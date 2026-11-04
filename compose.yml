@@ -1,0 +1,107 @@
+x-backend: &backend
+  build:
+    context: ./backend
+  environment:
+    VIBESOLVER_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    VIBESOLVER_REDIS_URL: redis://redis:6379/0
+    VIBESOLVER_S3_ENDPOINT: http://seaweed-s3:8333
+    VIBESOLVER_S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+    VIBESOLVER_S3_SECRET_KEY: ${S3_SECRET_KEY}
+    VIBESOLVER_S3_BUCKET_RAW: ${S3_BUCKET_RAW}
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    seaweed-s3:
+      condition: service_started
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  seaweed-master:
+    image: chrislusf/seaweedfs:4.17
+    command: >
+      master
+      -ip=seaweed-master
+      -ip.bind=0.0.0.0
+    volumes:
+      - seaweed_master_data:/data
+
+  seaweed-volume:
+    image: chrislusf/seaweedfs:4.17
+    command: >
+      volume
+      -master=seaweed-master:9333
+      -ip=seaweed-volume
+      -ip.bind=0.0.0.0
+      -dir=/data
+    volumes:
+      - seaweed_volume_data:/data
+    depends_on:
+      - seaweed-master
+
+  seaweed-filer:
+    image: chrislusf/seaweedfs:4.17
+    command: >
+      filer
+      -master=seaweed-master:9333
+      -ip=seaweed-filer
+      -ip.bind=0.0.0.0
+    depends_on:
+      - seaweed-master
+      - seaweed-volume
+
+  seaweed-s3:
+    image: chrislusf/seaweedfs:4.17
+    command: >
+      s3
+      -filer=seaweed-filer:8888
+      -ip.bind=0.0.0.0
+      -port=8333
+      -config=/etc/seaweedfs/s3.json
+    volumes:
+      - ./infra/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    ports:
+      - "8333:8333"
+    depends_on:
+      - seaweed-filer
+
+  api:
+    <<: *backend
+    command: api
+    ports:
+      - "8000:8000"
+
+  worker:
+    <<: *backend
+    command: worker
+
+volumes:
+  postgres_data:
+  seaweed_master_data:
+  seaweed_volume_data:

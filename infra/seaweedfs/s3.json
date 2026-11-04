@@ -1,0 +1,20 @@
+{
+    "identities": [
+        {
+            "name": "vibesolver",
+            "credentials": [
+                {
+                    "accessKey": "vibesolver",
+                    "secretKey": "vibesolver"
+                }
+            ],
+            "actions": [
+                "Admin",
+                "Read",
+                "Write",
+                "List",
+                "Tagging"
+            ]
+        }
+    ]
+}

@@ -59,6 +59,37 @@ cp .env.example .env
 docker compose up -d
 ```
 
+## Сборка
+
+Для сборки десктоп-приложения под вашу операционную систему выполните соответствующий скрипт в корне репозитория:
+
+**Windows** (PowerShell):
+
+```
+.\build-windows.ps1
+```
+
+**Linux**:
+
+```
+./build-linux.sh
+```
+
+**macOS**:
+
+```
+./build-mac.sh
+```
+
+Требования к машине сборки:
+
+- Docker (для инфраструктуры и образа backend)
+- Node.js и npm (для frontend)
+- Python 3.12+ и uv (для backend)
+- Для macOS-сборки: macOS с Xcode Command Line Tools
+
+Скрипт собирает backend-образ, фронтенд и упаковывает десктоп-приложение (Electron) в исполняемый файл для текущей ОС: `.exe` для Windows, `AppImage` для Linux, `.dmg` для macOS. Готовые артефакты кладутся в `build/dist`.
+
 ## Разработка
 
 Спецификации возможностей и план изменений ведутся в формате spec-driven development:
