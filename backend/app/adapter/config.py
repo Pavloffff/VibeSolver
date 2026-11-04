@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     s3_secret_key: str = "vibesolver"
     s3_bucket_raw: str = "raw"
     cors_origins: list[str] = ["*"]
+    max_upload_bytes: int = 500 * 1024 * 1024
+    max_archive_unpacked_bytes: int = 2 * 1024 * 1024 * 1024
 
 
 @lru_cache

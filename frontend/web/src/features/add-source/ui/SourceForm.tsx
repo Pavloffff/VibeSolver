@@ -2,25 +2,30 @@
 import { getApiClient, getErrorMessage } from '../../../shared/api/client'
 import type { ApiClient } from '../../../shared/api/client'
 import type { ConfigField, ConnectorInfo } from '../../../entities/source'
+import type { Source } from '../../../entities/source'
 import { useT } from '../../../shared/i18n'
 import { selectFolder } from '../../../shared/api/folderPicker'
 import { hasNativeFolderDialog } from '../../../shared/api/folderPicker'
 
 interface Props {
   api?: ApiClient
-  onCreated: () => void
+  source?: Source
+  onCreated: (source: Source, importError?: string) => void
   onClose: () => void
 }
 
-export default function SourceForm({ api = getApiClient(), onCreated, onClose }: Props) {
+export default function SourceForm({ api = getApiClient(), source, onCreated, onClose }: Props) {
   const { t } = useT()
   const [connectors, setConnectors] = useState<ConnectorInfo[]>([])
-  const [type, setType] = useState('')
-  const [name, setName] = useState('')
-  const [config, setConfig] = useState<Record<string, string>>({})
+  const [type, setType] = useState(source?.type ?? '')
+  const [name, setName] = useState(source?.name ?? '')
+  const [config, setConfig] = useState<Record<string, string>>(() =>
+    Object.fromEntries(Object.entries(source?.config ?? {}).filter(([, value]) => typeof value === 'string')) as Record<string, string>,
+  )
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -29,6 +34,12 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
       .then((list) => {
         if (!cancelled) {
           setConnectors(list)
+          if (source !== undefined) {
+            setType(source.type)
+            setName(source.name)
+            const schema = list.find((connector) => connector.type === source.type)?.config_schema.fields ?? []
+            setConfig(Object.fromEntries(schema.map((field) => [field.name, String(source.config?.[field.name] ?? '')])))
+          }
         }
       })
       .catch((requestError: unknown) => {
@@ -39,7 +50,7 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
     return () => {
       cancelled = true
     }
-  }, [api])
+  }, [api, source])
 
   const selected = connectors.find((connector) => connector.type === type) ?? null
 
@@ -72,19 +83,34 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
     const fields = selected !== null ? selected.config_schema.fields : []
     const missing: Record<string, string> = {}
     for (const field of fields) {
+      if (source !== undefined && field.kind === 'password' && !(config[field.name] ?? '').trim()) continue
       if (field.required && !(config[field.name] ?? '').trim()) {
         missing[field.name] =
-          field.kind === 'folder' ? t('errors.chooseFolder') : t('errors.fillField', { field: field.label })
+          field.kind === 'folder' ? t('errors.chooseFolder') :
+          field.kind === 'file' ? t('errors.chooseArchive') : t('errors.fillField', { field: field.label })
       }
     }
+    if (uploading) return
     if (Object.keys(missing).length > 0) {
       setFieldErrors(missing)
       return
     }
     setSaving(true)
     try {
-      await api.createSource(type, name.trim(), config)
-      onCreated()
+      const submittedConfig = { ...config }
+      for (const field of fields) {
+        if (field.kind === 'password' && !(submittedConfig[field.name] ?? '').trim()) delete submittedConfig[field.name]
+      }
+      const project = source === undefined
+        ? await api.createSource(type, name.trim(), submittedConfig)
+        : await api.updateSource(source.id, name.trim(), submittedConfig)
+      let importError: string | undefined
+      try {
+        await api.startImport(project.id)
+      } catch (requestError) {
+        importError = getErrorMessage(requestError)
+      }
+      onCreated(project, importError)
     } catch (requestError) {
       setError(getErrorMessage(requestError))
     } finally {
@@ -101,7 +127,26 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
         setFieldValue(field.name, event.target.value),
     }
     let control
-    if (field.kind === 'password') {
+    if (field.kind === 'file') {
+      control = (
+        <input
+          type="file"
+          accept=".zip,.tar.gz,application/zip,application/gzip"
+          className={fieldError !== '' ? 'input-error' : undefined}
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (!file) return
+            setFieldErrors((prev) => ({ ...prev, [field.name]: '' }))
+            setUploading(true)
+            void api.uploadArchive(file).then(
+              ({ upload_key }) => setFieldValue(field.name, upload_key),
+              (uploadError: unknown) =>
+                setFieldErrors((prev) => ({ ...prev, [field.name]: getErrorMessage(uploadError) })),
+            ).finally(() => setUploading(false))
+          }}
+        />
+      )
+    } else if (field.kind === 'password') {
       control = <input type="password" {...commonProps} />
     } else if (field.kind === 'folder') {
       control = (
@@ -135,11 +180,13 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
         />
       )
     }
+    const label = field.name === 'upload_key' ? t('sourceForm.archiveFile') : field.label
+    const hint = field.name === 'upload_key' ? t('sourceForm.archiveHint') : field.hint
     return (
       <label key={field.name}>
-        {field.required ? `${field.label} *` : field.label}
+        {field.required ? `${label} *` : label}
         {control}
-        {field.hint != null && field.hint !== '' && <small className="hint">{field.hint}</small>}
+        {hint != null && hint !== '' && <small className="hint">{hint}</small>}
         {fieldError !== '' && <small className="error">{fieldError}</small>}
       </label>
     )
@@ -151,6 +198,7 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
         {t('sourceForm.typeLabel')}
         <select
           value={type}
+          disabled={source !== undefined}
           onChange={(event) => {
             setType(event.target.value)
             setConfig({})
@@ -181,8 +229,8 @@ export default function SourceForm({ api = getApiClient(), onCreated, onClose }:
         <button type="button" className="btn" onClick={onClose}>
           {t('common.cancel')}
         </button>
-        <button type="submit" className="btn btn-primary" disabled={saving}>
-          {t('sourceForm.submit')}
+        <button type="submit" className="btn btn-primary" disabled={saving || uploading}>
+          {uploading ? t('sourceForm.uploading') : source === undefined ? t('sourceForm.submit') : t('project.saveAndRetry')}
         </button>
       </div>
     </form>

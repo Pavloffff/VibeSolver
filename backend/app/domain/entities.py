@@ -36,7 +36,7 @@ class QueueUnavailableError(RuntimeError):
 class ConfigField(BaseModel):
     name: str
     label: str
-    kind: Literal["text", "path", "password", "folder"]
+    kind: Literal["text", "path", "password", "folder", "file"]
     required: bool
     hint: str | None = None
     placeholder: str | None = None

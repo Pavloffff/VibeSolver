@@ -1,13 +1,14 @@
 import hashlib
 import io
 import json
+import zipfile
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any
 
 import pytest
 from botocore.exceptions import ClientError
 
+from app.adapter.config import Settings
 from app.adapter.storage import (
     DEFAULT_STORAGE_STRATEGY,
     STORAGE_STRATEGY_REGISTRY,
@@ -88,13 +89,17 @@ class FakeImportFileRepository:
 
 
 @pytest.fixture
-def local_folder(tmp_path: Path) -> Path:
-    root = tmp_path / "project"
-    root.mkdir()
-    (root / "a.txt").write_bytes(b"alpha\n")
-    (root / "src").mkdir()
-    (root / "src" / "b.py").write_bytes(b"print(1)\n")
-    return root
+def archive_upload_key(monkeypatch: pytest.MonkeyPatch) -> str:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("a.txt", b"alpha\n")
+        archive.writestr("src/b.py", b"print(1)\n")
+    s3 = FakeS3()
+    key = "uploads/project"
+    s3.put_object(Bucket="raw", Key=key, Body=buffer.getvalue())
+    monkeypatch.setattr("app.adapter.connectors.archive.get_settings", lambda: Settings())
+    monkeypatch.setattr("app.adapter.connectors.archive.make_s3_client", lambda settings: s3)
+    return key
 
 
 def git_items() -> list[RawItem]:
@@ -160,11 +165,11 @@ def test_run_stages_reports_progress_after_each_stage() -> None:
     assert progress == [(1, 3), (2, 3), (3, 3)]
 
 
-def test_fetch_items_populates_context_from_local_folder(local_folder: Path) -> None:
+def test_fetch_items_populates_context_from_archive(archive_upload_key: str) -> None:
     ctx = ImportContext(
         source_id=1,
-        source_type="local_folder",
-        source_config={"path": str(local_folder)},
+        source_type="archive",
+        source_config={"upload_key": archive_upload_key},
     )
     FetchItems().run(ctx)
     by_path = {item.path: item for item in ctx.items}
@@ -175,11 +180,11 @@ def test_fetch_items_populates_context_from_local_folder(local_folder: Path) -> 
     assert by_path["a.txt"].meta["sha256"] == sha256_hex(b"alpha\n")
 
 
-def test_fetch_items_replaces_snapshot_on_refetch(local_folder: Path) -> None:
+def test_fetch_items_replaces_snapshot_on_refetch(archive_upload_key: str) -> None:
     ctx = ImportContext(
         source_id=1,
-        source_type="local_folder",
-        source_config={"path": str(local_folder)},
+        source_type="archive",
+        source_config={"upload_key": archive_upload_key},
     )
     FetchItems().run(ctx)
     FetchItems().run(ctx)
@@ -293,14 +298,14 @@ def test_storage_strategy_registry_contains_strategies() -> None:
 
 def test_default_storage_strategy_mapping() -> None:
     assert DEFAULT_STORAGE_STRATEGY["git"] == "git_reference"
-    assert DEFAULT_STORAGE_STRATEGY["local_folder"] == "full_copy"
+    assert DEFAULT_STORAGE_STRATEGY["archive"] == "full_copy"
     for strategy_key in DEFAULT_STORAGE_STRATEGY.values():
         assert strategy_key in STORAGE_STRATEGY_REGISTRY
 
 
 def test_resolve_storage_strategy_uses_defaults() -> None:
     assert isinstance(resolve_storage_strategy("git", {}), GitReferenceStorage)
-    assert isinstance(resolve_storage_strategy("local_folder", {}), FullCopyStorage)
+    assert isinstance(resolve_storage_strategy("archive", {}), FullCopyStorage)
 
 
 def test_resolve_storage_strategy_prefers_source_config_override() -> None:
@@ -325,7 +330,7 @@ def test_persist_items_records_each_file_row() -> None:
     s3 = FakeS3()
     ctx = ImportContext(
         source_id=5,
-        source_type="local_folder",
+        source_type="archive",
         source_config={},
         items=[
             RawItem(path="a.txt", content=b"alpha\n", meta={}),
@@ -347,7 +352,7 @@ def test_persist_items_rerun_keeps_single_row_per_file() -> None:
     s3 = FakeS3()
     ctx = ImportContext(
         source_id=5,
-        source_type="local_folder",
+        source_type="archive",
         source_config={},
         items=[RawItem(path="a.txt", content=b"alpha\n", meta={})],
     )
@@ -363,7 +368,7 @@ def test_persist_items_resolves_default_strategy_for_source_type() -> None:
     s3 = FakeS3()
     ctx = ImportContext(
         source_id=5,
-        source_type="local_folder",
+        source_type="archive",
         source_config={},
         items=[RawItem(path="a.txt", content=b"alpha\n", meta={})],
     )

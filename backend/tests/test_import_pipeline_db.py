@@ -1,8 +1,8 @@
 import hashlib
 import io
 import json
+import zipfile
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,9 +10,15 @@ from botocore.exceptions import ClientError
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.adapter.config import Settings
 from app.adapter.db import to_sync_dsn
 from app.adapter.repositories import ImportFileSqlRepository
 from app.usecase.import_pipeline import FetchItems, ImportContext, PersistItems
+
+PROJECT_FILES: dict[str, bytes] = {
+    "a.txt": b"alpha\n",
+    "src/b.py": b"print(1)\n",
+}
 
 
 class FakeS3:
@@ -38,14 +44,31 @@ class FakeS3:
         return {"ContentLength": len(body)}
 
 
+def build_project_zip(files: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+def put_project(s3: FakeS3, key: str, files: dict[str, bytes]) -> None:
+    s3.put_object(Bucket="raw", Key=key, Body=build_project_zip(files))
+
+
 @pytest.fixture
-def local_folder(tmp_path: Path) -> Path:
-    root = tmp_path / "project"
-    root.mkdir()
-    (root / "a.txt").write_bytes(b"alpha\n")
-    (root / "src").mkdir()
-    (root / "src" / "b.py").write_bytes(b"print(1)\n")
-    return root
+def connector_s3(monkeypatch: pytest.MonkeyPatch) -> FakeS3:
+    s3 = FakeS3()
+    monkeypatch.setattr("app.adapter.connectors.archive.get_settings", lambda: Settings())
+    monkeypatch.setattr("app.adapter.connectors.archive.make_s3_client", lambda settings: s3)
+    return s3
+
+
+@pytest.fixture
+def archive_upload_key(connector_s3: FakeS3) -> str:
+    key = "uploads/project"
+    put_project(connector_s3, key, PROJECT_FILES)
+    return key
 
 
 @pytest.fixture
@@ -58,23 +81,23 @@ def sync_engine(test_database_dsn: str) -> Iterator[Engine]:
 
 
 @pytest.fixture
-def local_source_id(sync_engine: Engine, local_folder: Path) -> int:
+def archive_source_id(sync_engine: Engine, archive_upload_key: str) -> int:
     with sync_engine.begin() as connection:
         result = connection.execute(
             text(
                 "INSERT INTO sources (type, name, config) "
-                "VALUES ('local_folder', 'fixture folder', CAST(:config AS jsonb)) RETURNING id"
+                "VALUES ('archive', 'fixture archive', CAST(:config AS jsonb)) RETURNING id"
             ),
-            {"config": json.dumps({"path": str(local_folder)})},
+            {"config": json.dumps({"upload_key": archive_upload_key})},
         )
         return int(result.scalar_one())
 
 
-def run_import(session: Session, source_id: int, folder: Path, s3: FakeS3) -> None:
+def run_import(session: Session, source_id: int, upload_key: str, s3: FakeS3) -> None:
     ctx = ImportContext(
         source_id=source_id,
-        source_type="local_folder",
-        source_config={"path": str(folder)},
+        source_type="archive",
+        source_config={"upload_key": upload_key},
     )
     FetchItems().run(ctx)
     PersistItems(repository=ImportFileSqlRepository(session), s3=s3, bucket="raw").run(ctx)
@@ -92,21 +115,20 @@ def select_imported_files(engine: Engine, source_id: int) -> list[Any]:
         return list(result.all())
 
 
-def test_local_folder_full_copy_end_to_end(
-    sync_engine: Engine, local_source_id: int, local_folder: Path
+def test_archive_full_copy_end_to_end(
+    sync_engine: Engine, archive_source_id: int, archive_upload_key: str
 ) -> None:
     s3 = FakeS3()
     session_factory = sessionmaker(bind=sync_engine)
     with session_factory() as session:
-        run_import(session, local_source_id, local_folder, s3)
-    rows = select_imported_files(sync_engine, local_source_id)
+        run_import(session, archive_source_id, archive_upload_key, s3)
+    rows = select_imported_files(sync_engine, archive_source_id)
     assert len(rows) == 2
     by_path = {row.path: row for row in rows}
     assert set(by_path) == {"a.txt", "src/b.py"}
-    contents = {"a.txt": b"alpha\n", "src/b.py": b"print(1)\n"}
-    for path, content in contents.items():
+    for path, content in PROJECT_FILES.items():
         content_hash = hashlib.sha256(content).hexdigest()
-        storage_key = f"files/source-{local_source_id}/{content_hash}.bin"
+        storage_key = f"files/source-{archive_source_id}/{content_hash}.bin"
         row = by_path[path]
         assert row.branch == ""
         assert row.size_bytes == len(content)
@@ -116,25 +138,28 @@ def test_local_folder_full_copy_end_to_end(
 
 
 def test_reimport_upserts_rows_without_duplicates(
-    sync_engine: Engine, local_source_id: int, local_folder: Path
+    sync_engine: Engine,
+    archive_source_id: int,
+    archive_upload_key: str,
+    connector_s3: FakeS3,
 ) -> None:
     s3 = FakeS3()
     session_factory = sessionmaker(bind=sync_engine)
     with session_factory() as session:
-        run_import(session, local_source_id, local_folder, s3)
-        run_import(session, local_source_id, local_folder, s3)
-        (local_folder / "a.txt").write_bytes(b"beta\n")
-        run_import(session, local_source_id, local_folder, s3)
-    rows = select_imported_files(sync_engine, local_source_id)
+        run_import(session, archive_source_id, archive_upload_key, s3)
+        run_import(session, archive_source_id, archive_upload_key, s3)
+        put_project(connector_s3, archive_upload_key, {**PROJECT_FILES, "a.txt": b"beta\n"})
+        run_import(session, archive_source_id, archive_upload_key, s3)
+    rows = select_imported_files(sync_engine, archive_source_id)
     assert len(rows) == 2
     by_path = {row.path: row for row in rows}
     hash_beta = hashlib.sha256(b"beta\n").hexdigest()
     hash_b = hashlib.sha256(b"print(1)\n").hexdigest()
     assert by_path["a.txt"].content_hash == hash_beta
-    assert by_path["a.txt"].storage_key == f"files/source-{local_source_id}/{hash_beta}.bin"
+    assert by_path["a.txt"].storage_key == f"files/source-{archive_source_id}/{hash_beta}.bin"
     assert by_path["src/b.py"].content_hash == hash_b
-    assert by_path["src/b.py"].storage_key == f"files/source-{local_source_id}/{hash_b}.bin"
+    assert by_path["src/b.py"].storage_key == f"files/source-{archive_source_id}/{hash_b}.bin"
     put_keys = [key for _, key in s3.put_keys]
-    assert put_keys.count(f"files/source-{local_source_id}/{hash_b}.bin") == 1
-    assert f"files/source-{local_source_id}/{hash_beta}.bin" in put_keys
+    assert put_keys.count(f"files/source-{archive_source_id}/{hash_b}.bin") == 1
+    assert f"files/source-{archive_source_id}/{hash_beta}.bin" in put_keys
     assert len(put_keys) == 3

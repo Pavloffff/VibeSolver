@@ -19,6 +19,8 @@ from app.handler.schemas import (
     LastImportOut,
     SourceCreate,
     SourceOut,
+    SourceStatsOut,
+    SourceUpdate,
     sanitize_config,
 )
 from app.usecase.sources import SourceUsecase
@@ -90,6 +92,81 @@ async def list_sources(session: SessionDep) -> list[SourceOut]:
         )
         for source, snapshot in items
     ]
+
+
+@router.get("/{source_id}", response_model=SourceOut)
+async def get_source(source_id: int, session: SessionDep) -> SourceOut:
+    usecase = build_usecase(session)
+    try:
+        source = await usecase.get(source_id)
+        snapshot = await usecase.import_status(source_id)
+    except ImportNotFoundError:
+        snapshot = None
+    except SourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    return SourceOut(
+        id=source.id,
+        type=source.type,
+        name=source.name,
+        enabled=source.enabled,
+        config=sanitize_config(source.config),
+        last_import=(
+            LastImportOut(
+                status=snapshot.status,
+                finished_at=(snapshot.finished_at.isoformat() if snapshot.finished_at else None),
+            )
+            if snapshot is not None
+            else None
+        ),
+    )
+
+
+@router.patch("/{source_id}", response_model=SourceOut)
+async def update_source(
+    source_id: int, payload: SourceUpdate, session: SessionDep
+) -> SourceOut:
+    usecase = build_usecase(session)
+    resources = (
+        {
+            category: [resource.model_dump() for resource in entries]
+            for category, entries in payload.resources.items()
+        }
+        if payload.resources is not None
+        else None
+    )
+    try:
+        source = await usecase.update(source_id, payload.name, payload.config, resources)
+        snapshot = await usecase.import_status(source_id)
+    except ImportNotFoundError:
+        snapshot = None
+    except SourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except (ConfigValidationError, UnknownConnectorError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return SourceOut(
+        id=source.id,
+        type=source.type,
+        name=source.name,
+        enabled=source.enabled,
+        config=sanitize_config(source.config),
+        last_import=(
+            LastImportOut(
+                status=snapshot.status,
+                finished_at=(snapshot.finished_at.isoformat() if snapshot.finished_at else None),
+            )
+            if snapshot is not None
+            else None
+        ),
+    )
+
+
+@router.get("/{source_id}/stats", response_model=SourceStatsOut)
+async def get_source_stats(source_id: int, session: SessionDep) -> SourceStatsOut:
+    try:
+        count = await build_usecase(session).file_count(source_id)
+    except SourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    return SourceStatsOut(file_count=count)
 
 
 @router.delete("/{source_id}", status_code=204)

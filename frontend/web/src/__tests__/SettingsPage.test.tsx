@@ -28,6 +28,20 @@ describe('SettingsPage language selector', () => {
     expect(screen.getByText('Server address')).toBeInTheDocument()
     expect(localStorage.getItem('vibesolver.lang')).toBe('en')
   })
+
+  it('persists a selected appearance theme', () => {
+    const onThemeChange = vi.fn()
+    render(
+      <I18nProvider>
+        <SettingsPage theme="light" onThemeChange={onThemeChange} />
+      </I18nProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Тёмная тема' }))
+
+    expect(onThemeChange).toHaveBeenCalledWith('dark')
+    expect(localStorage.getItem('vibesolver.theme')).toBe('dark')
+  })
 })
 
 describe('SettingsPage in electron mode', () => {

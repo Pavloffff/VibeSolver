@@ -1,7 +1,7 @@
 import { getApiBaseUrl } from '../config'
 import { t } from '../i18n'
 import { getLang } from '../state/settings'
-import type { ConnectorInfo, ImportStatus, Source } from './types'
+import type { ConnectorInfo, ImportStatus, ProjectResource, ProjectStats, Source } from './types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -59,10 +59,40 @@ export class ApiClient {
     return this.request<Source[]>('/api/v1/sources')
   }
 
+  getSource(id: number): Promise<Source> {
+    return this.request<Source>(`/api/v1/sources/${id}`)
+  }
+
+  getProjectStats(id: number): Promise<ProjectStats> {
+    return this.request<ProjectStats>(`/api/v1/sources/${id}/stats`)
+  }
+
+  updateSource(
+    id: number,
+    name: string,
+    config: Record<string, string>,
+    resources?: Record<string, ProjectResource[]>,
+  ): Promise<Source> {
+    return this.request<Source>(`/api/v1/sources/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name, config, ...(resources === undefined ? {} : { resources }) }),
+    })
+  }
+
   createSource(type: string, name: string, config: Record<string, string>): Promise<Source> {
     return this.request<Source>('/api/v1/sources', {
       method: 'POST',
       body: JSON.stringify({ type, name, config }),
+    })
+  }
+
+  uploadArchive(file: File): Promise<{ upload_key: string }> {
+    const form = new FormData()
+    form.append('file', file)
+    return this.request<{ upload_key: string }>('/api/v1/uploads', {
+      method: 'POST',
+      body: form,
+      headers: {},
     })
   }
 

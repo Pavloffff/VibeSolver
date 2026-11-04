@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type { ApiClient } from '../shared/api/client'
 import SourcesPage from '../pages/sources-page'
 import { I18nProvider } from '../shared/i18n'
@@ -44,8 +44,20 @@ describe('SourcesPage', () => {
     expect(screen.getByText('local_folder')).toBeInTheDocument()
     expect(screen.getByText('Успешно')).toBeInTheDocument()
     expect(screen.getByText('—')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Импорт' })).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'main repo' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Импорт' })).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Удалить' })).toHaveLength(2)
+  })
+
+  it('opens a project when its name is selected', async () => {
+    const onProjectSelected = vi.fn()
+    render(
+      <I18nProvider>
+        <SourcesPage api={makeApi()} onProjectSelected={onProjectSelected} />
+      </I18nProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'main repo' }))
+    expect(onProjectSelected).toHaveBeenCalledWith(1)
   })
 
   it('shows English strings after switching to en', async () => {
@@ -56,7 +68,7 @@ describe('SourcesPage', () => {
       </I18nProvider>,
     )
     expect(await screen.findByText('main repo')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add source' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New project' })).toBeInTheDocument()
     expect(screen.getByText('Done')).toBeInTheDocument()
     expect(screen.getByText('Import status')).toBeInTheDocument()
   })

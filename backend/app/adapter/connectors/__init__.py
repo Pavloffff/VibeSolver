@@ -1,17 +1,17 @@
+from app.adapter.connectors.archive import ArchiveConnector
 from app.adapter.connectors.base import BaseConnector
 from app.adapter.connectors.git import GitConnector
 from app.adapter.connectors.hg import MercurialConnector
-from app.adapter.connectors.local_folder import LocalFolderConnector
 from app.adapter.connectors.svn import SvnConnector
 from app.domain.entities import ConnectorDescriptor
 from app.domain.repositories import ConnectorSPI, set_default_connector_catalog
 
 __all__ = [
     "CONNECTOR_REGISTRY",
+    "ArchiveConnector",
     "BaseConnector",
     "ConnectorCatalogImpl",
     "GitConnector",
-    "LocalFolderConnector",
     "MercurialConnector",
     "SvnConnector",
 ]
@@ -20,7 +20,7 @@ CONNECTOR_REGISTRY: dict[str, type[BaseConnector]] = {
     connector.type: connector
     for connector in (
         GitConnector,
-        LocalFolderConnector,
+        ArchiveConnector,
         SvnConnector,
         MercurialConnector,
     )

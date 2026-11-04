@@ -7,9 +7,20 @@ export interface AppSettings {
   serverUrl: string
 }
 
+export type Theme = 'light' | 'dark'
+
 const SETTINGS_STORAGE_KEY = 'vibesolver.settings'
 export const SERVER_URL_STORAGE_KEY = 'vibesolver.serverUrl'
 const LANG_STORAGE_KEY = 'vibesolver.lang'
+const THEME_STORAGE_KEY = 'vibesolver.theme'
+
+export function getTheme(): Theme {
+  return localStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light'
+}
+
+export function saveTheme(theme: Theme): void {
+  localStorage.setItem(THEME_STORAGE_KEY, theme)
+}
 
 function isLang(value: string): value is Lang {
   return value === 'en' || value === 'ru' || value === 'zh'

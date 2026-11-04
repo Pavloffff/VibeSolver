@@ -44,6 +44,62 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sources/{source_id}:
+    get:
+      tags:
+      - sources
+      summary: Get Source
+      operationId: get_source_api_v1_sources__source_id__get
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - sources
+      summary: Update Source
+      operationId: update_source_api_v1_sources__source_id__patch
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     delete:
       tags:
       - sources
@@ -59,6 +115,32 @@ paths:
       responses:
         '204':
           description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sources/{source_id}/stats:
+    get:
+      tags:
+      - sources
+      summary: Get Source Stats
+      operationId: get_source_stats_api_v1_sources__source_id__stats_get
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceStatsOut'
         '422':
           description: Validation Error
           content:
@@ -132,6 +214,31 @@ paths:
                   $ref: '#/components/schemas/ConnectorInfo'
                 type: array
                 title: Response List Connectors Api V1 Connectors Get
+  /api/v1/uploads:
+    post:
+      tags:
+      - uploads
+      summary: Upload Archive
+      operationId: upload_archive_api_v1_uploads_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_archive_api_v1_uploads_post'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /health:
     get:
       summary: Health
@@ -148,6 +255,16 @@ paths:
                 title: Response Health Health Get
 components:
   schemas:
+    Body_upload_archive_api_v1_uploads_post:
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
+      type: object
+      required:
+      - file
+      title: Body_upload_archive_api_v1_uploads_post
     ConfigField:
       properties:
         name:
@@ -163,6 +280,7 @@ components:
           - path
           - password
           - folder
+          - file
           title: Kind
         required:
           type: boolean
@@ -263,6 +381,24 @@ components:
       - status
       - finished_at
       title: LastImportOut
+    ProjectResource:
+      properties:
+        type:
+          type: string
+          title: Type
+        name:
+          type: string
+          title: Name
+        config:
+          additionalProperties: true
+          type: object
+          title: Config
+      type: object
+      required:
+      - type
+      - name
+      - config
+      title: ProjectResource
     SourceCreate:
       properties:
         type:
@@ -312,6 +448,48 @@ components:
       - config
       - last_import
       title: SourceOut
+    SourceStatsOut:
+      properties:
+        file_count:
+          type: integer
+          title: File Count
+      type: object
+      required:
+      - file_count
+      title: SourceStatsOut
+    SourceUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Config
+        resources:
+          anyOf:
+          - additionalProperties:
+              items:
+                $ref: '#/components/schemas/ProjectResource'
+              type: array
+            type: object
+          - type: 'null'
+          title: Resources
+      type: object
+      title: SourceUpdate
+    UploadOut:
+      properties:
+        upload_key:
+          type: string
+          title: Upload Key
+      type: object
+      required:
+      - upload_key
+      title: UploadOut
     ValidationError:
       properties:
         loc:

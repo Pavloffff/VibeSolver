@@ -2,7 +2,7 @@ from httpx import AsyncClient
 
 from app.adapter.connectors import CONNECTOR_REGISTRY
 
-EXPECTED_CONNECTOR_TYPES: set[str] = {"git", "local_folder", "svn", "hg"}
+EXPECTED_CONNECTOR_TYPES: set[str] = {"git", "archive", "svn", "hg"}
 SKELETON_CONNECTOR_TYPES: set[str] = {"svn", "hg"}
 
 
@@ -39,4 +39,14 @@ async def test_skeleton_connectors_not_ready(api_client: AsyncClient) -> None:
     for skeleton_type in SKELETON_CONNECTOR_TYPES:
         assert by_type[skeleton_type]["ready"] is False
     assert by_type["git"]["ready"] is True
-    assert by_type["local_folder"]["ready"] is True
+    assert by_type["archive"]["ready"] is True
+
+
+async def test_archive_connector_field_uses_file_kind(api_client: AsyncClient) -> None:
+    response = await api_client.get("/api/v1/connectors")
+    assert response.status_code == 200
+    by_type = {entry["type"]: entry for entry in response.json()}
+    fields = by_type["archive"]["config_schema"]["fields"]
+    assert fields[0]["name"] == "upload_key"
+    assert fields[0]["kind"] == "file"
+    assert fields[0]["required"] is True

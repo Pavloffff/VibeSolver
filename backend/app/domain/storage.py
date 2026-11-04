@@ -114,7 +114,7 @@ STORAGE_STRATEGY_REGISTRY: dict[str, type[StorageStrategy]] = {
 
 DEFAULT_STORAGE_STRATEGY: dict[str, str] = {
     "git": "git_reference",
-    "local_folder": "full_copy",
+    "archive": "full_copy",
 }
 
 

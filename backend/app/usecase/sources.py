@@ -48,6 +48,43 @@ class SourceUsecase:
             raise SourceNotFoundError(source_id)
         await self._sources.set_enabled(source_id, False)
 
+    async def get(self, source_id: int) -> Source:
+        source = await self._sources.get_enabled(source_id)
+        if source is None:
+            raise SourceNotFoundError(source_id)
+        return source
+
+    async def update(
+        self,
+        source_id: int,
+        name: str | None,
+        config_patch: dict[str, Any] | None,
+        resources_patch: dict[str, list[dict[str, Any]]] | None,
+    ) -> Source:
+        source = await self.get(source_id)
+        next_name = name.strip() if name is not None else source.name
+        if not next_name:
+            raise ConfigValidationError("project name must not be empty")
+        next_config = dict(source.config)
+        if config_patch is not None:
+            next_config.update(config_patch)
+        if resources_patch is not None:
+            resources = dict(next_config.get("resources", {}))
+            resources.update(resources_patch)
+            next_config["resources"] = resources
+        connector = self._connectors.get(source.type)
+        if connector is None:
+            raise UnknownConnectorError(source.type)
+        try:
+            connector.validate_config(next_config)
+        except ConfigValidationError as exc:
+            raise ConfigValidationError(str(exc)) from exc
+        return await self._sources.update(source_id, next_name, next_config)
+
+    async def file_count(self, source_id: int) -> int:
+        await self.get(source_id)
+        return await self._sources.count_imported_files(source_id)
+
     async def enqueue_import(self, source_id: int) -> str:
         source = await self._sources.get_enabled(source_id)
         if source is None:

@@ -8,10 +8,21 @@ export interface Source {
   type: string
   name: string
   enabled: boolean
+  config?: Record<string, unknown>
   last_import: LastImport | null
 }
 
-export type ConfigFieldKind = 'text' | 'path' | 'password' | 'folder'
+export interface ProjectResource {
+  type: string
+  name: string
+  config: Record<string, unknown>
+}
+
+export interface ProjectStats {
+  file_count: number
+}
+
+export type ConfigFieldKind = 'text' | 'path' | 'password' | 'folder' | 'file'
 
 export interface ConfigField {
   name: string

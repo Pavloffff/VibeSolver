@@ -11,6 +11,12 @@ def test_sanitize_config_keeps_config_without_token_ref() -> None:
     assert sanitize_config({"url": "y"}) == {"url": "y"}
 
 
+def test_sanitize_config_drops_nested_resource_tokens() -> None:
+    assert sanitize_config({"resources": {"wiki": [{"config": {"token_ref": "x", "space": "docs"}}]}}) == {
+        "resources": {"wiki": [{"config": {"space": "docs"}}]}
+    }
+
+
 TOKEN_REF_PAYLOAD: dict[str, object] = {
     "type": "git",
     "name": "private repo",
