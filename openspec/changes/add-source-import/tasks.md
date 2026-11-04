@@ -1,4 +1,4 @@
-﻿# Tasks: add-source-import
+# Tasks: add-source-import
 
 ## 1. Scaffold
 
@@ -32,14 +32,15 @@
 
 ## 5. Web UI
 
-- [ ] 5.1 `кодер`: `frontend/web/` scaffold (Vite + React + TS strict), typed API client, source list + register form **generated from GET /api/v1/connectors** (no hardcoded type list) + import button with status polling
-- [ ] 5.2 Mode selection screen (local/remote) + settings page; connection check call
-- [ ] 5.3 `build/start-local`: root `docker compose up -d` from UI (local mode), Docker detection with friendly error
+- [x] 5.1 `кодер`: `frontend/web/` scaffold (Vite + React + TS strict), typed API client, source list + register form **generated from GET /api/v1/connectors** (no hardcoded type list) + import button with status polling
+- [x] 5.2 Mode selection screen (local/remote) + settings page; connection check call
+- [x] 5.3 `build/start-local`: root `docker compose up -d` from UI (local mode), Docker detection with friendly error
+- [x] 5.4 i18n: dictionaries `en`/`ru`/`zh` in `frontend/web/src/i18n/`, all strings through `t()`, language switch in Settings (default `en`), persisted
 
 ## 6. Desktop
 
-- [ ] 6.1 `кодер`: `frontend/desktop/` Electron wrapper loading the `frontend/web/` build; config persistence (mode, server URL)
-- [ ] 6.2 electron-builder config in `frontend/desktop/`; packaging wired to root `build-windows.ps1` / `build-linux.sh` / `build-mac.sh` (win exe, linux AppImage, mac dmg)
+- [x] 6.1 `кодер`: `frontend/desktop/` Electron wrapper loading the `frontend/web/` build; config persistence (mode, server URL)
+- [x] 6.2 electron-builder config in `frontend/desktop/`; packaging wired to root `build-windows.ps1` / `build-linux.sh` / `build-mac.sh` (win exe, linux AppImage, mac dmg)
 
 ## 7. Review + integration
 

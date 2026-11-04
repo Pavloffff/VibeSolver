@@ -140,6 +140,24 @@ The desktop/web app SHALL support mode selection on first run: **local** (docker
 
 The local infra SHALL run SeaweedFS as `chrislusf/seaweedfs:4.17` services master/volume/filer/s3 (pattern proven in the reference deployment), with an S3 bucket `raw` auto-created at startup.
 
+# Spec: ui-i18n
+
+## ADDED Requirements
+
+### Requirement: localized UI
+
+All user-facing strings in web and desktop UIs SHALL be resolved through a translation dictionary (`en`, `ru`, `zh`). The default language SHALL be English. The user SHALL be able to change the language in Settings; the choice SHALL be persisted (localStorage / desktop config) and applied without restart.
+
+#### Scenario: switch language
+
+- **GIVEN** UI running with default language `en`
+- **WHEN** the user selects «Русский» in Settings
+- **THEN** all UI texts switch to Russian immediately and remain Russian after app restart
+
+### Requirement: dictionary extensibility
+
+Adding a new language SHALL require only a new dictionary file — no component changes. Dictionaries live in `frontend/web/src/i18n/` and are the single source of UI text.
+
 # Spec: desktop-app
 
 ## ADDED Requirements

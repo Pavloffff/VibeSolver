@@ -61,7 +61,7 @@ docker compose up -d
 
 ## Сборка
 
-Для сборки десктоп-приложения под вашу операционную систему выполните соответствующий скрипт в корне репозитория:
+Для сборки десктоп-приложения под вашу операционную систему выполните соответствующий скрипт в корне репозитория. Локальный режим упакованного приложения требует файлы `compose.yml` и `.env` из корня репозитория (см. `VIBESOLVER_REPO_ROOT`).
 
 **Windows** (PowerShell):
 
@@ -69,17 +69,30 @@ docker compose up -d
 .\build-windows.ps1
 ```
 
+Сборка запускает тесты backend (pytest, ruff, mypy) и frontend (lint, vitest, build) и только затем собирает установщик .exe.
+
+Переменные окружения для разработки (не обязательны, в установщик ничего не «запекается»):
+
+- `VIBESOLVER_LOCAL_API` — адрес локального API для режима «Локально» (по умолчанию `http://localhost:8000`);
+- `ELECTRON_DEV_URL` — URL dev-сервера Vite (например, `http://localhost:5173`): десктоп-приложение загрузит его вместо собранного `frontend/web/dist`;
+- `VIBESOLVER_REPO_ROOT` — путь к корню репозитория для локального режима в упакованном приложении (по умолчанию ищется вверх по дереву каталогов от места установки по файлу `compose.yml`);
+- `VIBESOLVER_HEALTH_TIMEOUT_MS`, `VIBESOLVER_HEALTH_POLL_INTERVAL_MS`, `VIBESOLVER_HEALTH_REQUEST_TIMEOUT_MS` — таймауты ожидания сервера в десктоп-приложении (по умолчанию 180000 / 3000 / 4000 мс).
+
 **Linux**:
 
 ```
 ./build-linux.sh
 ```
 
+Сборка .AppImage для Linux выполняется только на Linux.
+
 **macOS**:
 
 ```
 ./build-mac.sh
 ```
+
+Сборка .dmg для macOS должна выполняться на macOS — ограничение electron-builder: кросс-сборка macOS-установщиков из Windows/Linux не поддерживается.
 
 Требования к машине сборки:
 
@@ -88,7 +101,7 @@ docker compose up -d
 - Python 3.12+ и uv (для backend)
 - Для macOS-сборки: macOS с Xcode Command Line Tools
 
-Скрипт собирает backend-образ, фронтенд и упаковывает десктоп-приложение (Electron) в исполняемый файл для текущей ОС: `.exe` для Windows, `AppImage` для Linux, `.dmg` для macOS. Готовые артефакты кладутся в `build/dist`.
+Скрипт проверяет backend (тесты, линтер, типизация), собирает фронтенд и упаковывает десктоп-приложение (Electron) в исполняемый файл для текущей ОС: `.exe` для Windows, `AppImage` для Linux, `.dmg` для macOS. Готовые артефакты кладутся в `build/dist`.
 
 ## Разработка
 

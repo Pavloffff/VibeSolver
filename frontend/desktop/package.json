@@ -1,0 +1,56 @@
+{
+  "name": "vibesolver-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "VibeSolver desktop application",
+  "author": "Pavloffff",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "copy-web": "node scripts/copy-web.mjs",
+    "start": "electron .",
+    "dev": "npm run build && npm run copy-web && electron .",
+    "dist:win": "npm run build && node scripts/copy-web.mjs && electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0",
+    "typescript": "~5.9.0"
+  },
+  "build": {
+    "appId": "com.pavloffff.vibesolver",
+    "productName": "VibeSolver",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "web-dist/**"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "VibeSolver-Setup-${version}.exe"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "artifactName": "VibeSolver-${version}.AppImage"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "artifactName": "VibeSolver-${version}.dmg"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

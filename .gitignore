@@ -226,6 +226,10 @@ dist/
 .turbo/
 *.tsbuildinfo
 
+# Desktop packaging
+frontend/desktop/web-dist/
+frontend/desktop/release/
+
 # OS
 .DS_Store
 Thumbs.db

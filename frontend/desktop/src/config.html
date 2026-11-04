@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>VibeSolver</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f4f6;
+  color: #111827;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { width: 640px; max-width: 90vw; padding: 40px 0; }
+h1 { font-size: 22px; margin: 0 0 6px; }
+.subtitle { color: #6b7280; margin: 0 0 24px; }
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.card:hover { border-color: #93c5fd; }
+.card.selected { border-color: #2563eb; background: #eff6ff; }
+.card-title { font-size: 15px; font-weight: 600; }
+.card-desc { font-size: 13px; color: #6b7280; line-height: 1.4; }
+.lang-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+select {
+  padding: 6px 10px;
+  font-size: 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  font-family: inherit;
+}
+label { font-size: 14px; color: #374151; }
+.url-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+input[type="url"] {
+  flex: 1;
+  min-width: 260px;
+  padding: 9px 12px;
+  font-size: 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-family: inherit;
+}
+input[type="url"]:focus { outline: 2px solid #2563eb; border-color: #2563eb; }
+button.secondary {
+  padding: 9px 14px;
+  font-size: 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  cursor: pointer;
+  font-family: inherit;
+}
+button.secondary:hover { background: #f9fafb; }
+button.secondary:disabled { opacity: 0.6; cursor: default; }
+.status { font-size: 13px; min-height: 18px; margin: 0 0 6px; }
+.status.ok { color: #15803d; }
+.status.error { color: #b91c1c; }
+.status.pending { color: #6b7280; }
+button.primary {
+  padding: 12px 28px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #2563eb;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+}
+button.primary:hover { background: #1d4ed8; }
+button.primary:disabled { opacity: 0.6; cursor: default; }
+.version { margin-top: 20px; font-size: 12px; color: #9ca3af; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="txt-title"></h1>
+  <p class="subtitle" id="txt-subtitle"></p>
+  <div class="cards">
+    <button class="card selected" id="card-local" type="button">
+      <span class="card-title" id="txt-local-title"></span>
+      <span class="card-desc" id="txt-local-desc"></span>
+    </button>
+    <button class="card" id="card-remote" type="button">
+      <span class="card-title" id="txt-remote-title"></span>
+      <span class="card-desc" id="txt-remote-desc"></span>
+    </button>
+  </div>
+  <div class="lang-row" id="lang-row" hidden>
+    <label for="lang-select" id="txt-lang-label"></label>
+    <select id="lang-select"></select>
+  </div>
+  <div class="url-row" id="url-row" hidden>
+    <label for="server-url" id="txt-url-label"></label>
+    <input id="server-url" type="url" spellcheck="false" />
+    <button class="secondary" id="check-button" type="button"></button>
+  </div>
+  <p class="status" id="check-status"></p>
+  <p class="status" id="main-status"></p>
+  <button class="primary" id="start-button" type="button"></button>
+  <p class="version" id="version"></p>
+</main>
+<script src="config-renderer.js"></script>
+</body>
+</html>

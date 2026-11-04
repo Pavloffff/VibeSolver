@@ -101,6 +101,13 @@ services:
     <<: *backend
     command: worker
 
+  web:
+    build: ./frontend/web
+    ports:
+      - "8080:8080"
+    depends_on:
+      - api
+
 volumes:
   postgres_data:
   seaweed_master_data:

@@ -18,6 +18,11 @@ Two pillars for every decision:
 1. **User convenience** — the product must be easy for a non-technical user: one-click local mode, clear errors, web and desktop parity.
 2. **Extensibility** — never hardcode closed sets of options (connector types, source kinds, chunk kinds, routes). Use registries/SPIs open for extension without core changes (open-closed). No CHECK-constraint-style enums in the DB where growth is expected — enums as data (registry/config), not as schema.
 
+## Hard Rules
+
+- **No secrets or environment-specific config in constants.** All URLs, hosts, ports, credentials, tokens, and tunables come from environment variables via `.env` (backend: pydantic-settings reading env prefix; frontend: runtime config, never baked into the bundle). `.env` is never committed; `.env.example` documents every variable with safe defaults. If a value could differ between dev/prod/machine — it belongs in env, not in code.
+- **i18n from day one.** All user-facing strings go through a translation dictionary (no inline literals in components). Supported languages: English (default), Russian, Chinese. Language is a user setting in the UI. Adding a language = adding a dictionary file, no code changes.
+
 ## Tech Stack
 
 | Layer | Tech |
