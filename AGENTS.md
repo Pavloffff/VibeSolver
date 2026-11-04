@@ -20,8 +20,26 @@ Two pillars for every decision:
 
 ## Hard Rules
 
+- **OpenAPI contract lives in `backend/api/`.** `openapi.json` + `openapi.yaml` are exported from the FastAPI app (`uv run python scripts/export_openapi.py`) — code is the source of truth. After ANY endpoint/schema change: re-export and commit both files together with the code. CI/tests (`backend/tests/test_openapi_contract.py`) validate the files against the OpenAPI 3.1 spec and fail on drift between contract and app.
+- **Compose file is named `docker-compose.yml`** (never `compose.yml`), at repo root.
+- **Language split: agent-facing = English, human-facing = Russian.** Agent-read files (this AGENTS.md, `openspec/AGENTS.md`, prompts) — English. Human-read files (all spec artifacts `openspec/**` incl. proposals/specs/design/tasks, `docs/**`, user-facing README) — Russian. Code, identifiers, commit messages, `.env` — English. When in doubt: if the user reviews/approves it — Russian; if an agent consumes it as instructions — English.
 - **No secrets or environment-specific config in constants.** All URLs, hosts, ports, credentials, tokens, and tunables come from environment variables via `.env` (backend: pydantic-settings reading env prefix; frontend: runtime config, never baked into the bundle). `.env` is never committed; `.env.example` documents every variable with safe defaults. If a value could differ between dev/prod/machine — it belongs in env, not in code.
 - **i18n from day one.** All user-facing strings go through a translation dictionary (no inline literals in components). Supported languages: English (default), Russian, Chinese. Language is a user setting in the UI. Adding a language = adding a dictionary file, no code changes.
+
+## Architecture Conventions (DDD)
+
+Backend follows **DDD layering** (modular monolith — see `docs/adr/0001-modular-monolith.md`):
+
+```
+backend/app/
+├── domain/     # entities (SQLAlchemy models), repository INTERFACES (protocols), value objects — no infra deps
+├── usecase/    # business logic: register source, run import pipeline (stage orchestration) — depends on domain only
+├── adapter/    # infra implementations: db (SQLAlchemy repos), s3, source connectors, celery, config (pydantic-settings)
+└── handler/    # FastAPI routers/schemas — thin HTTP layer, delegates to usecase
+```
+
+- Dependency direction: `handler → usecase → domain`; `adapter` implements domain interfaces and is injected into usecase. Domain never imports adapter/handler.
+- Frontend follows **Feature-Sliced Design (FSD)**: layers `app → pages → widgets → features → entities → shared`; each layer may only import from layers below; API clients and i18n in `shared`, source-related UI in `entities`/`features`.
 
 ## Tech Stack
 
@@ -111,7 +129,7 @@ This repo follows OpenSpec conventions (see `openspec/AGENTS.md`):
 Rules of thumb:
 - Specs are written by the smartest available model; implementation may use a cheaper one; review uses a smart model again.
 - A spec is done when further refinement causes fatigue — not before.
-- Write specs/README/docs prose in Russian where user-facing (README, doc sites); keep code, identifiers, commit messages, and internal docs in English.
+- ALL spec artifacts (proposal.md, specs/, design.md, tasks.md) and docs are in **Russian**. Code, identifiers, commit messages in English.
 
 ## Repo Layout
 

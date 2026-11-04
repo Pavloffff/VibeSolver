@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
-import type { ApiClient } from '../api/client'
-import SourceForm from '../components/SourceForm'
-import { I18nProvider } from '../i18n'
+import type { ApiClient } from '../shared/api/client'
+import SourceForm from '../features/add-source'
+import { I18nProvider } from '../shared/i18n'
 
 const connectors = [
   {

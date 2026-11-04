@@ -1,201 +1,201 @@
-# Spec: source-registry
+# Спека: source-registry
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: register a source via API
+### Требование: регистрация источника через API
 
-The system SHALL expose `POST /api/v1/sources` accepting `{type, name, config}`. `type` MUST be a key present in the connector registry (validation is registry-driven, not a hardcoded list — new connectors extend the accepted set without API changes). The system SHALL validate config via the connector's `validate_config` before persisting.
+СИСТЕМА ДОЛЖНА предоставить `POST /api/v1/sources`, принимающий `{type, name, config}`. `type` ДОЛЖЕН быть ключом, присутствующим в реестре коннекторов (валидация управляется реестром, а не хардкод-списком — новые коннекторы расширяют допустимое множество без изменений API). СИСТЕМА ДОЛЖНА валидировать config через `validate_config` коннектора до сохранения.
 
-#### Scenario: valid git source
+#### Сценарий: корректный git-источник
 
-- **GIVEN** no sources registered
-- **WHEN** `POST /api/v1/sources` with `{"type": "git", "name": "main repo", "config": {"url": "https://github.com/x/y.git", "branch": "main"}}`
-- **THEN** the response is 201 with the created source `id`, and the source appears in `GET /api/v1/sources`
+- **ДАНО** нет зарегистрированных источников
+- **КОГДА** выполняется `POST /api/v1/sources` с `{"type": "git", "name": "main repo", "config": {"url": "https://github.com/x/y.git", "branch": "main"}}`
+- **ТО** ответ — 201 с `id` созданного источника, и источник появляется в `GET /api/v1/sources`
 
-#### Scenario: invalid config rejected
+#### Сценарий: некорректный конфиг отклонён
 
-- **GIVEN** connector `git` requires `url`
-- **WHEN** `POST /api/v1/sources` with `{"type": "git", "config": {}}`
-- **THEN** the response is 422 with a validation error message, and nothing is persisted
+- **ДАНО** коннектор `git` требует `url`
+- **КОГДА** выполняется `POST /api/v1/sources` с `{"type": "git", "config": {}}`
+- **ТО** ответ — 422 с сообщением об ошибке валидации, и ничего не сохраняется
 
-### Requirement: list and delete sources
+### Требование: список и удаление источников
 
-The system SHALL expose `GET /api/v1/sources` (list with last import status) and `DELETE /api/v1/sources/{id}` (soft delete: `enabled=false` + hidden from list).
+СИСТЕМА ДОЛЖНА предоставить `GET /api/v1/sources` (список со статусом последнего импорта) и `DELETE /api/v1/sources/{id}` (мягкое удаление: `enabled=false` + скрытие из списка).
 
-#### Scenario: list shows import status
+#### Сценарий: список показывает статус импорта
 
-- **GIVEN** source id=1 with last import finished successfully
-- **WHEN** `GET /api/v1/sources`
-- **THEN** each item includes `id, name, type, enabled, last_import: {status, finished_at}`
+- **ДАНО** источник id=1, последний импорт завершился успешно
+- **КОГДА** выполняется `GET /api/v1/sources`
+- **ТО** каждый элемент включает `id, name, type, enabled, last_import: {status, finished_at}`
 
-### Requirement: import trigger
+### Требование: запуск импорта
 
-The system SHALL expose `POST /api/v1/sources/{id}/import` that enqueues a Celery import task and returns 202 with `task_id`. The UI SHALL show import progress by polling `GET /api/v1/sources/{id}/import` (latest import: `status, progress, error`).
+СИСТЕМА ДОЛЖНА предоставить `POST /api/v1/sources/{id}/import`, ставящий в очередь Celery-задачу импорта и возвращающий 202 с `task_id`. UI ДОЛЖЕН показывать прогресс импорта, опрашивая `GET /api/v1/sources/{id}/import` (последний импорт: `status, progress, error`).
 
-#### Scenario: enqueue import
+#### Сценарий: постановка импорта в очередь
 
-- **GIVEN** registered source id=1 (git)
-- **WHEN** `POST /api/v1/sources/1/import`
-- **THEN** response is 202 `{task_id}`, and `GET /api/v1/sources/1/import` eventually reports `status=done`
+- **ДАНО** зарегистрированный источник id=1 (git)
+- **КОГДА** выполняется `POST /api/v1/sources/1/import`
+- **ТО** ответ — 202 `{task_id}`, и `GET /api/v1/sources/1/import` в итоге сообщает `status=done`
 
-# Spec: source-connector-spi
+# Спека: source-connector-spi
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: connector interface
+### Требование: интерфейс коннектора
 
-Every source connector MUST implement the protocol: `validate_config(config: dict) -> None` (raise on invalid) and `fetch_snapshot(config: dict) -> Iterator[RawItem]` where `RawItem` has `path: str`, `content: bytes`, `meta: dict`.
+Каждый коннектор источников ОБЯЗАН реализовать протокол: `validate_config(config: dict) -> None` (кидает исключение при некорректном значении) и `fetch_snapshot(config: dict) -> Iterator[RawItem]`, где `RawItem` имеет `path: str`, `content: bytes`, `meta: dict`.
 
-### Requirement: connector registry
+### Требование: реестр коннекторов
 
-The system SHALL keep a registry mapping type key → connector class. `list_connectors()` SHALL return all registered types with a `ready: bool` flag (False for skeletons).
+СИСТЕМА ДОЛЖНА хранить реестр, отображающий ключ типа → класс коннектора. `list_connectors()` ДОЛЖЕН возвращать все зарегистрированные типы с флагом `ready: bool` (False для скелетов).
 
-### Requirement: registry introspection endpoint
+### Требование: endpoint интроспекции реестра
 
-The system SHALL expose `GET /api/v1/connectors` returning the registry contents: `[{type, ready, config_schema}]`. The UI registration form SHALL be generated from this response; the frontend MUST NOT hardcode the type list.
+СИСТЕМА ДОЛЖНА предоставить `GET /api/v1/connectors`, возвращающий содержимое реестра: `[{type, ready, config_schema}]`. Форма регистрации в UI ДОЛЖНА генерироваться из этого ответа; фронтенд НЕ ДОЛЖЕН хардкодить список типов.
 
-#### Scenario: new connector appears in UI
+#### Сценарий: новый коннектор появляется в UI
 
-- **GIVEN** connector `gitea` registered server-side with `ready: true` and its config schema
-- **WHEN** the user opens the source registration form
-- **THEN** `gitea` is selectable with its config fields rendered from `config_schema`, without any frontend code change
+- **ДАНО** коннектор `gitea` зарегистрирован на сервере с `ready: true` и его конфигурационной схемой
+- **КОГДА** пользователь открывает форму регистрации источника
+- **ТО** `gitea` доступен для выбора, его поля конфигурации отрисованы из `config_schema`, без каких-либо изменений кода фронтенда
 
-# Spec: git-connector
+# Спека: git-connector
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: git snapshot fetch
+### Требование: получение git-снимка
 
-The git connector SHALL clone the repository with `--depth 1` into a temp dir and yield every non-ignored text file of the configured branches as RawItem (binary files excluded by extension list; `.gitignore` rules respected). Config: `{"url": ..., "branches": ["main", "release-1.0"], "token_ref": ...}` — `branches` is a list, defaulting to the repository's default branch when absent. Each yielded RawItem SHALL carry `branch` in meta. The branch list is data (config), not a closed set — masks like `release-*` may be added later without schema changes.
+Git-коннектор ДОЛЖЕН клонировать репозиторий с `--depth 1` во временную директорию и отдавать как RawItem каждый не попавший под исключения текстовый файл указанных веток (бинарные файлы исключаются по списку расширений; правила `.gitignore` соблюдаются). Конфигурация: `{"url": ..., "branches": ["main", "release-1.0"], "token_ref": ...}` — `branches` — это список; при отсутствии используется ветка репозитория по умолчанию. Каждый отданный RawItem ДОЛЖЕН нести `branch` в meta. Список веток — это данные (конфигурация), а не закрытое множество: маски вида `release-*` могут быть добавлены позже без изменений схемы.
 
-#### Scenario: import a public repo
+#### Сценарий: импорт публичного репозитория
 
-- **GIVEN** source config `{"url": "<any public git url>", "branches": ["main"]}`
-- **WHEN** import task runs
-- **THEN** all tracked text files of branch `main` are yielded with correct relative paths and `meta.branch == "main"`, and the temp dir is removed afterwards
+- **ДАНО** конфигурация источника `{"url": "<любой публичный git url>", "branches": ["main"]}`
+- **КОГДА** выполняется задача импорта
+- **ТО** все отслеживаемые текстовые файлы ветки `main` получены с корректными относительными путями и `meta.branch == "main"`, а временная директория удаляется по завершении
 
-#### Scenario: multi-branch import
+#### Сценарий: импорт нескольких веток
 
-- **GIVEN** source config `{"url": ..., "branches": ["main", "dev"]}`
-- **WHEN** import task runs
-- **THEN** files from both branches are yielded, each tagged with its branch
+- **ДАНО** конфигурация источника `{"url": ..., "branches": ["main", "dev"]}`
+- **КОГДА** выполняется задача импорта
+- **ТО** файлы обеих веток получены, каждый помечен своей веткой
 
-### Requirement: token handling
+### Требование: работа с токенами
 
-Private-repo tokens SHALL be passed via config `token_ref` (name of a secret stored server-side), never logged, never returned by API responses.
+Токены приватных репозиториев ДОЛЖНЫ передаваться через конфигурационное поле `token_ref` (имя секрета, хранимого на сервере), никогда не логироваться и никогда не возвращаться в ответах API.
 
-# Spec: local-folder-connector
+# Спека: local-folder-connector
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: folder walk
+### Требование: обход папки
 
-The local-folder connector SHALL recursively walk the configured path and yield every non-excluded text file as RawItem, using the same exclusion rules as git-connector.
+Коннектор локальной папки ДОЛЖЕН рекурсивно обходить настроенный путь и отдавать как RawItem каждый текстовый файл, не попавший под исключения, по тем же правилам исключений, что у git-connector.
 
-#### Scenario: import a folder
+#### Сценарий: импорт папки
 
-- **GIVEN** config `{"path": "D:/some/project"}`
-- **WHEN** import task runs
-- **THEN** all text files under the path are yielded with paths relative to the root
+- **ДАНО** конфигурация `{"path": "D:/some/project"}`
+- **КОГДА** выполняется задача импорта
+- **ТО** все текстовые файлы под этим путём получены с путями, относительными к корню
 
-# Spec: svn-mercurial-connector-skeletons
+# Спека: svn-mercurial-connector-skeletons
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: skeletons
+### Требование: скелеты
 
-The system SHALL provide svn and hg connectors that: validate config shape, are listed in the registry with `ready: false`, and raise `NotImplementedError` from `fetch_snapshot`.
+СИСТЕМА ДОЛЖНА предоставить коннекторы svn и hg, которые: валидируют форму конфигурации, присутствуют в реестре с `ready: false` и кидают `NotImplementedError` из `fetch_snapshot`.
 
-# Spec: import-pipeline
+# Спека: import-pipeline
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: stage-based pipeline
+### Требование: стадийный конвейер
 
-The import SHALL run as an ordered pipeline of stages from a stage registry: **fetch** (connector yields RawItems) → **persist** (delegates to a storage strategy). The pipeline SHALL accept additional transform stages registered between fetch and persist without worker changes (empty in this change — future chunking/embedding stages).
+Импорт ДОЛЖЕН выполняться как упорядоченный конвейер стадий из реестра стадий: **fetch** (коннектор отдаёт RawItem'ы) → **persist** (делегирует стратегии хранения). Конвейер ДОЛЖЕН принимать дополнительные transform-стадии, регистрируемые между fetch и persist, без изменений воркера (в этом изменении их нет — будущие стадии чанкинга/эмбеддинга).
 
-### Requirement: idempotency
+### Требование: идемпотентность
 
-Re-importing the same source SHALL re-fetch and overwrite (upsert by source_id + branch + path, keyed on content_hash — unchanged files are not re-uploaded).
+Реимпорт того же источника ДОЛЖЕН заново забирать данные и перезаписывать их (upsert по source_id + branch + path, с ключом content_hash — неизменённые файлы не загружаются повторно).
 
-# Spec: storage-strategies
+# Спека: storage-strategies
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: strategy registry
+### Требование: реестр стратегий
 
-Storage strategies SHALL be registered in a registry keyed by strategy name; the source config field `storage_strategy` overrides the connector's default. Adding a strategy SHALL not require changes to the pipeline or API.
+Стратегии хранения ДОЛЖНЫ регистрироваться в реестре с ключом по имени стратегии; конфигурационное поле источника `storage_strategy` переопределяет значение по умолчанию, выбранное коннектором. Добавление стратегии НЕ ДОЛЖНО требовать изменений конвейера или API.
 
-### Requirement: git_reference strategy (default for git)
+### Требование: стратегия git_reference (по умолчанию для git)
 
-For a source with strategy `git_reference` the system SHALL NOT copy file content to object storage. It SHALL store per-file metadata in `imported_files` (path, branch, blob SHA in content_hash or dedicated column, size) and upload to SeaweedFS a single snapshot manifest (JSON: commit SHA, branches, per-branch file list with blob SHAs). Content for downstream stages SHALL be resolvable from the git repository by blob SHA.
+Для источника со стратегией `git_reference` СИСТЕМА НЕ ДОЛЖНА копировать содержимое файлов в объектное хранилище. Она ДОЛЖНА хранить в `imported_files` метаданные на каждый файл (path, branch, blob SHA в content_hash или отдельной колонке, size) и загружать в SeaweedFS единственный манифест снимка (JSON: commit SHA, ветки, списки файлов по веткам с blob SHA). Содержимое для последующих стадий ДОЛЖНО разрешаться из git-репозитория по blob SHA.
 
-#### Scenario: git import with reference storage
+#### Сценарий: git-импорт с reference-хранением
 
-- **GIVEN** a git source with default strategy and branch `main` at commit `abc123`
-- **WHEN** import completes
-- **THEN** `imported_files` contains all text files of `main` with their blob SHAs, exactly one manifest object exists in bucket `raw`, and no file-content objects were uploaded
+- **ДАНО** git-источник со стратегией по умолчанию и веткой `main` на коммите `abc123`
+- **КОГДА** импорт завершается
+- **ТО** в `imported_files` лежат все текстовые файлы ветки `main` с их blob SHA; в бакете `raw` существует ровно один объект-манифест; ни одного объекта с содержимым файлов загружено не было
 
-### Requirement: full_copy strategy (default for local_folder)
+### Требование: стратегия full_copy (по умолчанию для local_folder)
 
-For a source with strategy `full_copy` the system SHALL upload every RawItem to SeaweedFS (S3 API, bucket `raw`) and insert an `imported_files` row (source_id, branch, path, size, storage_key, content_hash). A completed import SHALL set the source's `last_import` status.
+Для источника со стратегией `full_copy` СИСТЕМА ДОЛЖНА загрузить каждый RawItem в SeaweedFS (S3 API, бакет `raw`) и вставить строку в `imported_files` (source_id, branch, path, size, storage_key, content_hash). Завершённый импорт ДОЛЖЕН устанавливать источнику статус `last_import`.
 
-#### Scenario: local folder import
+#### Сценарий: импорт локальной папки
 
-- **GIVEN** a local_folder source
-- **WHEN** import completes
-- **THEN** every yielded file exists in bucket `raw` and has a row in `imported_files`
+- **ДАНО** источник типа local_folder
+- **КОГДА** импорт завершается
+- **ТО** каждый полученный файл существует в бакете `raw` и имеет строку в `imported_files`
 
-# Spec: infra-local-remote
+# Спека: infra-local-remote
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: two run modes
+### Требование: два режима работы
 
-The desktop/web app SHALL support mode selection on first run: **local** (docker-compose services started in background) or **remote** (API base URL + credentials). The choice SHALL be persisted and changeable in settings.
+Десктопное/веб-приложение ДОЛЖНО поддерживать выбор режима при первом запуске: **local** (сервисы docker-compose запускаются в фоне) или **remote** (API base URL + учётные данные). Выбор ДОЛЖЕН сохраняться и быть изменяемым в настройках.
 
-#### Scenario: local mode first run
+#### Сценарий: первый запуск в локальном режиме
 
-- **GIVEN** fresh install on a machine with Docker
-- **WHEN** user picks "local"
-- **THEN** infra containers start in background, and the app connects to `http://localhost:<api-port>`
+- **ДАНО** чистая установка на машине с Docker
+- **КОГДА** пользователь выбирает "local"
+- **ТО** контейнеры инфраструктуры стартуют в фоне, и приложение подключается к `http://localhost:<api-port>`
 
-#### Scenario: remote mode
+#### Сценарий: удалённый режим
 
-- **GIVEN** existing server deployment
-- **WHEN** user picks "remote" and enters the server URL
-- **THEN** the app skips local infra and calls the remote API
+- **ДАНО** существующее серверное развёртывание
+- **КОГДА** пользователь выбирает "remote" и вводит URL сервера
+- **ТО** приложение пропускает локальную инфраструктуру и обращается к удалённому API
 
-### Requirement: seaweedfs stack
+### Требование: стек SeaweedFS
 
-The local infra SHALL run SeaweedFS as `chrislusf/seaweedfs:4.17` services master/volume/filer/s3 (pattern proven in the reference deployment), with an S3 bucket `raw` auto-created at startup.
+Локальная инфраструктура ДОЛЖНА запускать SeaweedFS как сервисы master/volume/filer/s3 образа `chrislusf/seaweedfs:4.17` (паттерн, проверенный в эталонном развёртывании), с S3-бакетом `raw`, автоматически создаваемым при старте.
 
-# Spec: ui-i18n
+# Спека: ui-i18n
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: localized UI
+### Требование: локализованный UI
 
-All user-facing strings in web and desktop UIs SHALL be resolved through a translation dictionary (`en`, `ru`, `zh`). The default language SHALL be English. The user SHALL be able to change the language in Settings; the choice SHALL be persisted (localStorage / desktop config) and applied without restart.
+Все пользовательские строки веб- и десктопного UI ДОЛЖНЫ разрешаться через словарь переводов (`en`, `ru`, `zh`). Язык по умолчанию — английский. Пользователь ДОЛЖЕН иметь возможность сменить язык в настройках; выбор ДОЛЖЕН сохраняться (localStorage / конфиг десктоп-приложения) и применяться без перезапуска.
 
-#### Scenario: switch language
+#### Сценарий: смена языка
 
-- **GIVEN** UI running with default language `en`
-- **WHEN** the user selects «Русский» in Settings
-- **THEN** all UI texts switch to Russian immediately and remain Russian after app restart
+- **ДАНО** UI работает на языке по умолчанию `en`
+- **КОГДА** пользователь выбирает «Русский» в настройках
+- **ТО** все тексты UI немедленно переключаются на русский и остаются русскими после перезапуска приложения
 
-### Requirement: dictionary extensibility
+### Требование: расширяемость словарей
 
-Adding a new language SHALL require only a new dictionary file — no component changes. Dictionaries live in `frontend/web/src/i18n/` and are the single source of UI text.
+Добавление нового языка ДОЛЖНО требовать только новый файл словаря — без изменений компонентов. Словари лежат в `frontend/web/src/i18n/` и являются единственным источником текстов UI.
 
-# Spec: desktop-app
+# Спека: desktop-app
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: electron packaging
+### Требование: упаковка Electron
 
-The desktop app SHALL be an Electron wrapper around the same React UI codebase as `apps/web`, packaged as executables for Windows, Linux, and macOS via a build script in `scripts/`.
+Десктопное приложение ДОЛЖНО быть Electron-обёрткой вокруг той же кодовой базы React UI, что и `apps/web`, упаковываемой в исполнимые файлы для Windows, Linux и macOS через сборочный скрипт в `scripts/`.
 
-### Requirement: ui feature parity
+### Требование: паритет возможностей UI
 
-The desktop app SHALL render the identical web UI (source registration form, source list with import status, mode settings). No feature shall be web-only or desktop-only.
+Десктопное приложение ДОЛЖНО показывать идентичный веб-UI (форма регистрации источников, список источников со статусом импорта, настройки режима). Ни одна возможность не должна быть доступна только в вебе или только в десктопе.

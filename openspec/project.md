@@ -1,50 +1,50 @@
-# VibeSolver — Project Context
+# VibeSolver — Контекст проекта
 
-> Source of truth for AI agents. Read this before proposing or implementing changes.
+> Источник истины для AI-агентов. Прочитайте перед тем, как предлагать или реализовывать изменения.
 
-## Purpose
+## Назначение
 
-VibeSolver automates IT support ticket handling end-to-end: a customer's unstructured ticket goes in; a Merge Request with a fix (after human approval) or an escalation dossier for the on-call developer comes out. The system grounds all agent reasoning in product context — source code, documentation, user flows, and ticket history — provided by an internal knowledge layer.
+VibeSolver автоматизирует сквозную обработку IT-тикетов поддержки: на входе — неструктурированный тикет клиента; на выходе — Merge Request с исправлением (после согласования человеком) или эскалационное досье для дежурного разработчика. Все рассуждения агентов заземлены на контексте продукта — исходном коде, документации, пользовательских сценариях (user flows) и истории тикетов, — предоставляемом внутренним слоем знаний.
 
-## Problem Statement
+## Постановка проблемы
 
-1. Ticket resolution time grows with load.
-2. Product knowledge is scattered across support lines and not accumulated.
-3. General-purpose LLMs do not know the specific product (code, docs, scenarios).
-4. No standardized multi-agent solutions connect development and support processes.
+1. Время разрешения тикетов растёт вместе с нагрузкой.
+2. Знания о продукте разрознены между линиями поддержки и не накапливаются.
+3. Универсальные LLM не знают конкретный продукт (код, документацию, сценарии).
+4. Не существует стандартизированных мультиагентных решений, связывающих процессы разработки и поддержки.
 
-## Architecture (C4 summary)
+## Архитектура (кратко по C4)
 
-- **C1 Context:** support L1 staff (tickets, MR approval), support engineer (import, user-flow approval), on-call developer (escalations). External: GitLab (repos, MR API), Confluence/GitWiki, LLM APIs.
-- **C2 Containers:** web UI (React) → API gateway (FastAPI) → PostgreSQL+pgvector; Celery workers (ingest, agents) over Redis; SeaweedFS (S3 artifacts); Langfuse (traces); Sandbox Executor.
-- **C3 Agent graph (LangGraph):** Triage → Log/Screen Analyzer → Code Investigator → Fix Writer ↔ (sandbox tests, max 3 iterations) → Human Approval → MR Builder | Escalation Builder.
+- **C1 Контекст:** сотрудники поддержки L1 (тикеты, согласование MR), инженер поддержки (импорт, согласование user-flow), дежурный разработчик (эскалации). Внешние системы: GitLab (репозитории, API MR), Confluence/GitWiki, API LLM.
+- **C2 Контейнеры:** веб-UI (React) → API-шлюз (FastAPI) → PostgreSQL+pgvector; Celery-воркеры (ingest, агенты) поверх Redis; SeaweedFS (S3-артефакты); Langfuse (трейсы); Sandbox Executor.
+- **C3 Граф агентов (LangGraph):** Triage → Log/Screen Analyzer → Code Investigator → Fix Writer ↔ (тесты в песочнице, максимум 3 итерации) → Human Approval → MR Builder | Escalation Builder.
 
-Key ideas (also the research hypotheses):
-- User Flow matching scopes retrieval before the LLM is invoked (narrower search → fewer tokens, higher auto-resolution).
-- Ticket history is a fourth source type (kind=ticket) for similar-case retrieval.
-- LLM-generated documentation from docstrings (kind=doc_generated, provenance-flagged, human-validated) improves retrieval vs. code-only index.
-- Ablation ("with context / without") quantifies the knowledge layer's contribution.
+Ключевые идеи (одновременно исследовательские гипотезы):
+- User Flow сужает область retrieval ещё до вызова LLM (более узкий поиск → меньше токенов, выше доля автоварешений).
+- История тикетов — четвёртый тип источника (kind=ticket) для поиска похожих случаев.
+- Документация, сгенерированная LLM из докстрингов (kind=doc_generated, с флагом provenance, валидируется человеком), улучшает retrieval по сравнению с индексом только по коду.
+- Абляция («с контекстом / без») количественно оценивает вклад слоя знаний.
 
-## Data Model (core tables)
+## Модель данных (ключевые таблицы)
 
-- `sources` — registered content sources (connector config, JSONB).
-- `chunks` — universal index: kind (code|doc|doc_generated|ticket), repo, path, symbol, content, tsv (tsvector), embedding (vector), content_hash, commit.
-- `user_flows` + `user_flow_versions` + `flow_embeddings` — user scenarios as first-class retrieval context.
-- `tickets`, `ticket_artifacts`, `agent_runs`, `patches`, `sandbox_runs`, `escalations`, `audit_log` — ticket lifecycle and full traceability.
+- `sources` — зарегистрированные источники контента (конфигурация коннектора, JSONB).
+- `chunks` — универсальный индекс: kind (code|doc|doc_generated|ticket), repo, path, symbol, content, tsv (tsvector), embedding (vector), content_hash, commit.
+- `user_flows` + `user_flow_versions` + `flow_embeddings` — пользовательские сценарии как полноценный контекст для retrieval.
+- `tickets`, `ticket_artifacts`, `agent_runs`, `patches`, `sandbox_runs`, `escalations`, `audit_log` — жизненный цикл тикета и полная трассируемость.
 
-## Non-Goals (for now)
+## Не-цели (пока)
 
-- No model training/fine-tuning — existing models only, via LLM gateway.
-- No multi-host k8s — single host docker-compose MVP.
-- No Jira/Telegram sinks yet — OutcomeSink SPI keeps the door open.
+- Без обучения/файнтюнинга моделей — только существующие модели через LLM-шлюз.
+- Без k8s на несколько хостов — MVP: docker-compose на одном хосте.
+- Пока без интеграций (sinks) в Jira/Telegram — SPI OutcomeSink оставляет эту возможность открытой.
 
-## Quality Standards
+## Стандарты качества
 
-- Retrieval quality: recall@10 ≥ 0.8 on golden set localization labels.
-- Pipeline: auto-resolution ≥ 50% of golden set, MR acceptance ≥ 70% by reviewers.
-- Eval protocol: ablation of context sources (flow scope on/off, ticket history on/off, local vs cloud models).
+- Качество retrieval: recall@10 ≥ 0.8 по меткам локализации золотого набора.
+- Конвейер: автоварешения ≥ 50% золотого набора, приёмка MR ревьюерами ≥ 70%.
+- Протокол оценки: абляция источников контекста (user-flow scope вкл/выкл, история тикетов вкл/выкл, локальные vs облачные модели).
 
-## References
+## Ссылки
 
-- Architecture diagrams: `docs/` (C4: SystemContext, Containers, AgentGraph, TicketFlow, ImportFlow).
-- Comparison with analogs (Glean, Copilot Enterprise, Cody, SWE-agent, AutoCodeRover, RAGFlow, Dify, etc.): thesis review chapter.
+- Архитектурные диаграммы: `docs/` (C4: SystemContext, Containers, AgentGraph, TicketFlow, ImportFlow).
+- Сравнение с аналогами (Glean, Copilot Enterprise, Cody, SWE-agent, AutoCodeRover, RAGFlow, Dify и др.): глава обзора в дипломной работе.

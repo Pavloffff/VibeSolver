@@ -1,49 +1,49 @@
-# Tasks: add-source-import
+# Задачи: add-source-import
 
-## 1. Scaffold
+## 1. Каркас
 
-- [x] 1.1 Create monorepo layout (full-stack-fastapi-template convention): `backend/app/{api,connectors,workers,storage,core}` + `backend/tests`, `frontend/web/` (Vite+React+TS placeholder), `frontend/desktop/` (placeholder), `build/`, `docs/`; update root `AGENTS.md` repo layout to match
-- [x] 1.2 Backend project: `pyproject.toml` (uv, deps: fastapi, uvicorn, celery, redis, sqlalchemy, psycopg, pydantic, boto3, dulwich; dev: pytest, ruff, mypy), pinned versions
-- [x] 1.3 Root `compose.yml`: postgres+pgvector (pgvector/pgvector image), redis, seaweedfs master/volume/filer/s3 (chrislusf/seaweedfs:4.17, reference pattern from D:\wb\data), api, worker; `.env.example` with all vars
-- [x] 1.4 Goose setup: `backend/migrations/` + first migration `00001_sources.sql` (`sources`, `imports`, `imported_files` tables; NO CHECK enums — extensibility philosophy: types/statuses are registry-driven data, not schema); goose runs from api container entrypoint
-- [x] 1.5 Root build scripts: `build-windows.ps1`, `build-linux.sh`, `build-mac.sh` (delegate to `build/`), `build/start-local.*`, `build/build-desktop.*`; README section «Сборка» (prerequisites + usage per OS)
+- [x] 1.1 Создать структуру монорепо (конвенция full-stack-fastapi-template): `backend/app/{api,connectors,workers,storage,core}` + `backend/tests`, `frontend/web/` (заглушка Vite+React+TS), `frontend/desktop/` (заглушка), `build/`, `docs/`; обновить раздел о структуре репозитория в корневом `AGENTS.md`
+- [x] 1.2 Проект backend: `pyproject.toml` (uv, зависимости: fastapi, uvicorn, celery, redis, sqlalchemy, psycopg, pydantic, boto3, dulwich; dev: pytest, ruff, mypy), зафиксированные версии
+- [x] 1.3 Корневой `compose.yml`: postgres+pgvector (образ pgvector/pgvector), redis, seaweedfs master/volume/filer/s3 (chrislusf/seaweedfs:4.17, эталонный паттерн из D:\wb\data), api, worker; `.env.example` со всеми переменными
+- [x] 1.4 Настройка goose: `backend/migrations/` + первая миграция `00001_sources.sql` (таблицы `sources`, `imports`, `imported_files`; БЕЗ CHECK-enum'ов — философия расширяемости: типы/статусы — данные реестра, а не схема); goose запускается из entrypoint контейнера api
+- [x] 1.5 Корневые сборочные скрипты: `build-windows.ps1`, `build-linux.sh`, `build-mac.sh` (делегируют в `build/`), `build/start-local.*`, `build/build-desktop.*`; раздел README «Сборка» (необходимые компоненты + использование по ОС)
 
-## 2. Source registry API (tests first)
+## 2. API реестра источников (сначала тесты)
 
-- [ ] 2.1 `тестер`: pytest fixtures — temp Postgres (docker) + httpx AsyncClient; tests for POST/GET/DELETE /api/v1/sources incl. validation-error scenario
-- [ ] 2.2 `кодер`: Pydantic schemas + SQLAlchemy models + routes; `s3` bucket `raw` ensure helper
-- [ ] 2.3 `тестер`: tests for GET /api/v1/connectors (registry introspection: types, ready flags, config_schema) + POST /api/v1/sources/{id}/import → 202 + imports status endpoint
-- [ ] 2.4 `кодер`: GET /api/v1/connectors route (registry self-description); import enqueue via Celery + `GET .../import` latest-status route
+- [x] 2.1 `тестер`: pytest-фикстуры — временный Postgres (docker) + httpx AsyncClient; тесты POST/GET/DELETE /api/v1/sources, включая сценарий ошибки валидации
+- [x] 2.2 `кодер`: Pydantic-схемы + SQLAlchemy-модели + маршруты; хелпер, гарантирующий наличие бакета `raw` в `s3`
+- [x] 2.3 `тестер`: тесты GET /api/v1/connectors (интроспекция реестра: типы, флаги ready, config_schema) + POST /api/v1/sources/{id}/import → 202 + endpoint статуса imports
+- [x] 2.4 `кодер`: маршрут GET /api/v1/connectors (самоописание реестра); постановка импорта в очередь через Celery + маршрут последнего статуса `GET .../import`
 
-## 3. Connector SPI + connectors (tests first)
+## 3. Connector SPI + коннекторы (сначала тесты)
 
-- [ ] 3.1 `тестер`: SPI tests — registry lists git/local_folder/svn/hg, `ready` flags correct; svn/hg fetch raises NotImplementedError
-- [ ] 3.2 `кодер`: `BaseConnector` protocol + strongly-typed registry (`dict[str, type[BaseConnector]]`) + config_schema per connector (Pydantic schema serialized) + svn/hg skeletons
-- [ ] 3.3 `тестер`: git connector tests — clone a small local git fixture repo, assert yielded paths/exclusions (.gitignore respected, binary excluded, temp dir cleaned)
-- [ ] 3.4 `кодер`: git connector (dulwich, --depth 1, branch checkout, exclusion rules)
-- [ ] 3.5 `тестер`: local-folder connector tests — walk fixture folder, exclusions
-- [ ] 3.6 `кодер`: local-folder connector (shared exclusion module with git)
+- [ ] 3.1 `тестер`: тесты SPI — реестр содержит git/local_folder/svn/hg, флаги `ready` корректны; svn/hg fetch кидает NotImplementedError
+- [ ] 3.2 `кодер`: протокол `BaseConnector` + строго типизированный реестр (`dict[str, type[BaseConnector]]`) + config_schema на каждый коннектор (сериализованная Pydantic-схема) + скелеты svn/hg
+- [ ] 3.3 `тестер`: тесты git-коннектора — клонирование маленького локального git-фикстурного репозитория, проверка отданных путей/исключений (.gitignore соблюдён, бинарные исключены, временная директория очищена)
+- [ ] 3.4 `кодер`: git-коннектор (dulwich, --depth 1, checkout ветки, правила исключений)
+- [ ] 3.5 `тестер`: тесты коннектора локальной папки — обход фикстурной папки, исключения
+- [ ] 3.6 `кодер`: коннектор локальной папки (общий с git модуль исключений)
 
-## 4. Import pipeline + storage strategies (tests first)
+## 4. Конвейер импорта + стратегии хранения (сначала тесты)
 
-- [ ] 4.1 `тестер`: stage-pipeline tests — PipelineStage protocol contract, STAGE_REGISTRY ordering (fetch → persist), ctx passing; strategy tests: `git_reference` (no content uploads, manifest only, blob SHA rows) vs `full_copy` (content uploaded); idempotency: re-import same content → no re-upload
-- [ ] 4.2 `кодер`: stage-based worker (PipelineStage protocol + registry + ImportContext; fetch stage; persist stage delegating to StorageStrategy registry: `git_reference`, `full_copy`; strategy override from source config; imports status updates, error capture)
-- [ ] 4.3 `тестер`: end-to-end — register local fixture source via API → enqueue → worker (celery eager mode) → imported_files rows + files in S3; git fixture source with reference strategy → manifest in S3, no content copies
+- [ ] 4.1 `тестер`: тесты стадийного конвейера — контракт протокола PipelineStage, порядок STAGE_REGISTRY (fetch → persist), передача ctx; тесты стратегий: `git_reference` (загрузки контента нет, только манифест, строки с blob SHA) vs `full_copy` (контент загружен); идемпотентность: реимпорт того же контента → без повторной загрузки
+- [ ] 4.2 `кодер`: стадийный воркер (протокол PipelineStage + реестр + ImportContext; стадия fetch; стадия persist с делегированием в реестр StorageStrategy: `git_reference`, `full_copy`; переопределение стратегии из конфига источника; обновления статуса imports, захват ошибок)
+- [ ] 4.3 `тестер`: end-to-end — зарегистрировать локальный фикстурный источник через API → поставить в очередь → воркер (celery eager mode) → строки imported_files + файлы в S3; git-фикстурный источник со стратегией reference → манифест в S3, без копий контента
 
-## 5. Web UI
+## 5. Веб-UI
 
-- [x] 5.1 `кодер`: `frontend/web/` scaffold (Vite + React + TS strict), typed API client, source list + register form **generated from GET /api/v1/connectors** (no hardcoded type list) + import button with status polling
-- [x] 5.2 Mode selection screen (local/remote) + settings page; connection check call
-- [x] 5.3 `build/start-local`: root `docker compose up -d` from UI (local mode), Docker detection with friendly error
-- [x] 5.4 i18n: dictionaries `en`/`ru`/`zh` in `frontend/web/src/i18n/`, all strings through `t()`, language switch in Settings (default `en`), persisted
+- [x] 5.1 `кодер`: каркас `frontend/web/` (Vite + React + TS strict), типизированный API-клиент, список источников + форма регистрации, **генерируемая из GET /api/v1/connectors** (без хардкода списка типов) + кнопка импорта с опросом статуса
+- [x] 5.2 Экран выбора режима (local/remote) + страница настроек; вызов проверки соединения
+- [x] 5.3 `build/start-local`: корневой `docker compose up -d` из UI (локальный режим), детекция Docker с дружелюбной ошибкой
+- [x] 5.4 i18n: словари `en`/`ru`/`zh` в `frontend/web/src/i18n/`, все строки через `t()`, переключение языка в настройках (по умолчанию `en`), с сохранением выбора
 
-## 6. Desktop
+## 6. Десктоп
 
-- [x] 6.1 `кодер`: `frontend/desktop/` Electron wrapper loading the `frontend/web/` build; config persistence (mode, server URL)
-- [x] 6.2 electron-builder config in `frontend/desktop/`; packaging wired to root `build-windows.ps1` / `build-linux.sh` / `build-mac.sh` (win exe, linux AppImage, mac dmg)
+- [x] 6.1 `кодер`: `frontend/desktop/` — Electron-обёртка, загружающая сборку `frontend/web/`; сохранение конфигурации (режим, URL сервера)
+- [x] 6.2 Конфиг electron-builder в `frontend/desktop/`; упаковка подключена к корневым `build-windows.ps1` / `build-linux.sh` / `build-mac.sh` (win exe, linux AppImage, mac dmg)
 
-## 7. Review + integration
+## 7. Ревью + интеграция
 
-- [ ] 7.1 `ревьюер`: full review vs spec (contracts, security: tokens not logged, exclusions correct), style pass
-- [ ] 7.2 Fix findings, run full pytest + lint + mypy, manual smoke: local mode up → import fixture repo → files in S3
-- [ ] 7.3 Update README install + build sections («Установка», «Сборка»: build-windows/linux/mac per OS); archive change
+- [ ] 7.1 `ревьюер`: полное ревью по спеке (контракты, безопасность: токены не логируются, исключения корректны), проход по стилю
+- [ ] 7.2 Исправить замечания, прогнать полный pytest + lint + mypy, ручной smoke: локальный режим поднят → импорт фикстурного репозитория → файлы в S3
+- [ ] 7.3 Обновить разделы README по установке и сборке («Установка», «Сборка»: build-windows/linux/mac по ОС); архивировать изменение

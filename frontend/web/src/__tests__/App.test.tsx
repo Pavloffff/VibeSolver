@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import App from '../App'
-import { I18nProvider } from '../i18n'
+import App from '../app/App'
+import { I18nProvider } from '../shared/i18n'
 
 afterEach(() => {
   vi.unstubAllGlobals()

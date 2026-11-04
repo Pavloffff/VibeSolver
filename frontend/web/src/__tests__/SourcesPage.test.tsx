@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import type { ApiClient } from '../api/client'
-import SourcesPage from '../components/SourcesPage'
-import { I18nProvider } from '../i18n'
+import type { ApiClient } from '../shared/api/client'
+import SourcesPage from '../pages/sources-page'
+import { I18nProvider } from '../shared/i18n'
 
 const sources = [
   {

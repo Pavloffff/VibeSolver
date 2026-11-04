@@ -1,43 +1,43 @@
-# Proposal: add-accounts-access
+# Предложение: add-accounts-access
 
-## Why
+## Зачем
 
-VibeSolver is a collaborative product: support teams work on the same product's knowledge base. Before the model-import phase (chunking/embeddings — the most expensive asset in the system), we need identity and access boundaries: who owns a project, who can register sources, who can read the indexed knowledge. Without accounts, every imported byte is effectively public to anyone with network access.
+VibeSolver — коллаборативный продукт: команды поддержки работают над базой знаний одного и того же продукта. До фазы импорта моделей (чанкинг/эмбеддинги — самый дорогой актив системы) нужны границы идентичности и доступа: кто владеет проектом, кто может регистрировать источники, кто может читать проиндексированные знания. Без аккаунтов каждый импортированный байт фактически общедоступен для любого, у кого есть сетевой доступ.
 
-## What Changes
+## Что меняется
 
-### Capability: internal-accounts
+### Возможность: internal-accounts
 
-Minimal internal identity: `users` table (internal id, display name, is_admin, created_at). No passwords yet — authentication is an extension point (see auth-spi). The current local single-user flow keeps working: the local mode auto-creates/uses a default local user; no login friction (user convenience philosophy).
+Минимальная внутренняя идентичность: таблица `users` (внутренний id, отображаемое имя, is_admin, created_at). Паролей пока нет — аутентификация является точкой расширения (см. auth-spi). Текущий локальный однопользовательский сценарий продолжает работать: локальный режим автоматически создаёт/использует локального пользователя по умолчанию; без трения при входе (философия удобства пользователя).
 
-### Capability: oauth-federation (GitHub + GitLab as ADD-ONS)
+### Возможность: oauth-federation (GitHub + GitLab как надстройки)
 
-OAuth login via GitHub and GitLab as an ADD-ON to internal accounts (user decision): a user may link one or more `oauth_identities` (provider key, provider uid, username) to their internal account and sign in through them. Pure-internal (no OAuth) usage remains fully supported. Providers are registry entries (not a hardcoded set) — a new provider (Gitea, Bitbucket) is a config/registry addition.
+OAuth-вход через GitHub и GitLab как НАДСТРОЙКА над внутренними аккаунтами (решение пользователя): пользователь может привязать одну или несколько `oauth_identities` (ключ провайдера, uid провайдера, username) к своему внутреннему аккаунту и входить через них. Чисто внутреннее использование (без OAuth) остаётся полностью поддерживаемым. Провайдеры — записи реестра (не хардкод-множество) — новый провайдер (Gitea, Bitbucket) добавляется через конфиг/реестр.
 
-### Capability: projects
+### Возможность: projects
 
-`projects` table: internal project id (UUID), name, description, timestamps. Sources are grouped under projects (source gains a nullable `project_id` now; enforced later). A project can be linked to a GitHub repo / GitLab project (provider, external id) — this powers git-role inheritance.
+Таблица `projects`: внутренний id проекта (UUID), имя, описание, временные метки. Источники группируются по проектам (источник уже сейчас получает nullable `project_id`; принудительная привязка — позже). Проект можно связать с репозиторием GitHub / проектом GitLab (провайдер, внешний id) — это обеспечивает наследование git-ролей.
 
-### Capability: git-role-inheritance
+### Возможность: git-role-inheritance
 
-Access to a linked project SHALL be inherited from the linked git repository roles (user decision: "admin + inheritance from git roles"): a user authenticated via a provider who is a collaborator/maintainer/etc. of the linked repo gets access to the corresponding VibeSolver project without explicit sharing. Internal `is_admin` remains the system-level superrole. Role mapping is a registry (provider role → VS access level), extensible per provider.
+Доступ к связанному проекту ДОЛЖЕН наследоваться от ролей в связанном git-репозитории (решение пользователя: «admin + наследование от git-ролей»): пользователь, аутентифицированный через провайдера и являющийся collaborator/maintainer/и т.п. связанного репозитория, получает доступ к соответствующему проекту VibeSolver без явного расшаривания. Внутренний `is_admin` остаётся системной суперролью. Маппинг ролей — реестр (роль провайдера → уровень доступа VS), расширяемый по провайдерам.
 
-### Capability: auth-spi
+### Возможность: auth-spi
 
-Authentication is a pluggable mechanism (extension point): the system defines an `Authenticator` interface (verify request → user id) with two implementations now: `noauth-local` (local single-user mode) and `oauth` (GitHub/GitLab). A ready-made auth module (password-based, LDAP, OIDC) can be added later without touching resource code.
+Аутентификация — подключаемый механизм (точка расширения): система определяет интерфейс `Authenticator` (проверить запрос → id пользователя) с двумя реализациями на данный момент: `noauth-local` (локальный однопользовательский режим) и `oauth` (GitHub/GitLab). Готовый модуль авторизации (по паролю, LDAP, OIDC) можно добавить позже, не трогая код ресурсов.
 
-### Capability: api-auth
+### Возможность: api-auth
 
-API endpoints get an auth middleware: local mode → noauth; server mode → Bearer/OAuth session. Frontend adds a minimal account UI: display current user, OAuth sign-in buttons (server mode), project switcher.
+API-endpoint'ы получают auth-middleware: локальный режим → noauth; серверный режим → Bearer/OAuth-сессия. Фронтенд получает минимальный UI аккаунтов: отображение текущего пользователя, кнопки OAuth-входа (серверный режим), переключатель проектов.
 
-## Capabilities with no changes
+## Возможности без изменений
 
-- Roles beyond admin + git-inheritance (granular RBAC — later, when product needs it).
-- Team/organization management — later.
+- Роли помимо admin + наследования от git-ролей (гранулярный RBAC — позже, когда этого потребует продукт).
+- Управление командами/организациями — позже.
 
-## Impact
+## Влияние
 
-- DB: new migrations (users, oauth_identities, projects, source.project_id).
-- API: auth middleware; new /auth and /projects endpoints.
-- UI: account section, OAuth sign-in, project switcher.
-- Existing source-import flow keeps working unchanged in local mode.
+- БД: новые миграции (users, oauth_identities, projects, source.project_id).
+- API: auth-middleware; новые endpoint'ы /auth и /projects.
+- UI: раздел аккаунтов, OAuth-вход, переключатель проектов.
+- Существующий поток source-import продолжает работать без изменений в локальном режиме.

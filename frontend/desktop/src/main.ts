@@ -50,7 +50,7 @@ function repoRoot(): string {
   if (override !== undefined && override.trim().length > 0) {
     return path.resolve(override);
   }
-  const fromCompose = findDirectoryUpward(app.getAppPath(), 'compose.yml');
+  const fromCompose = findDirectoryUpward(app.getAppPath(), 'docker-compose.yml');
   if (fromCompose !== null) {
     return fromCompose;
   }
@@ -294,7 +294,7 @@ function prepareLocalEnvironment(window: BrowserWindow, lang: Lang): LocalPrepar
     return 'quit';
   }
   const root = repoRoot();
-  const composePath = path.join(root, 'compose.yml');
+  const composePath = path.join(root, 'docker-compose.yml');
   const envPath = path.join(root, '.env');
   if (!fs.existsSync(composePath) || !fs.existsSync(envPath)) {
     return askOpenSettings(

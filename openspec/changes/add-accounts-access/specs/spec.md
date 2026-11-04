@@ -1,81 +1,81 @@
-# Spec: internal-accounts
+# Спека: internal-accounts
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: internal user record
+### Требование: внутренняя запись пользователя
 
-The system SHALL maintain `users` (internal UUID id, display_name, is_admin, created_at). Creating users SHALL be possible without any external identity.
+СИСТЕМА ДОЛЖНА вести таблицу `users` (внутренний UUID id, display_name, is_admin, created_at). Создание пользователей ДОЛЖНО быть возможно без какой-либо внешней идентичности.
 
-### Requirement: local default user
+### Требование: локальный пользователь по умолчанию
 
-In local mode the system SHALL transparently use a default local user (auto-created on first run); the user SHALL NOT be asked to log in (user convenience). Switching local mode to a real auth module later SHALL NOT require data migration beyond linking the default user.
+В локальном режиме СИСТЕМА ДОЛЖНА прозрачно использовать локального пользователя по умолчанию (автосоздаётся при первом запуске); пользователя НЕ ДОЛЖНЫ просить входить в систему (удобство пользователя). Перевод локального режима на реальный модуль авторизации позже НЕ ДОЛЖЕН требовать миграции данных сверх привязки пользователя по умолчанию.
 
-# Spec: oauth-federation
+# Спека: oauth-federation
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: linked identities
+### Требование: привязанные идентичности
 
-A user MAY have zero or more linked `oauth_identities` (provider, provider_uid, provider_username, linked_at). OAuth is an add-on: all product features SHALL work for a user with no linked identity.
+У пользователя МОЖЕТ быть ноль или более привязанных `oauth_identities` (provider, provider_uid, provider_username, linked_at). OAuth — надстройка: все возможности продукта ДОЛЖНЫ работать для пользователя без единой привязанной идентичности.
 
-### Requirement: provider registry
+### Требование: реестр провайдеров
 
-OAuth providers SHALL be registered entries (github, gitlab initially) with per-provider config (client id/secret from env); adding a provider SHALL NOT require core code changes.
+OAuth-провайдеры ДОЛЖНЫ быть записями реестра (изначально github, gitlab) с конфигурацией на каждого провайдера (client id/secret из env); добавление провайдера НЕ ДОЛЖНО требовать изменений кода ядра.
 
-#### Scenario: sign in via GitHub
+#### Сценарий: вход через GitHub
 
-- **GIVEN** server mode with GitHub provider configured (env: client id/secret)
-- **WHEN** a user clicks "Sign in with GitHub" and completes the OAuth flow
-- **THEN** the system finds or creates the internal user by provider_uid and establishes a session
+- **ДАНО** серверный режим с настроенным провайдером GitHub (env: client id/secret)
+- **КОГДА** пользователь нажимает "Sign in with GitHub" и завершает OAuth-поток
+- **ТО** система находит или создаёт внутреннего пользователя по provider_uid и устанавливает сессию
 
-#### Scenario: existing account linking
+#### Сценарий: привязка существующего аккаунта
 
-- **GIVEN** an internal user without linked identities
-- **WHEN** they complete OAuth sign-in with a GitHub account
-- **THEN** the identity is linked to the existing internal user (by explicit linking flow), not a duplicate account
+- **ДАНО** внутренний пользователь без привязанных идентичностей
+- **КОГДА** он завершает OAuth-вход с аккаунтом GitHub
+- **ТО** идентичность привязывается к существующему внутреннему пользователю (через явный поток привязки), а не создаётся дубликат аккаунта
 
-# Spec: projects
+# Спека: projects
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: projects
+### Требование: проекты
 
-The system SHALL maintain `projects` (internal id, name, description, timestamps). Sources MAY be grouped under a project (`sources.project_id`, nullable). A project MAY carry one linked git repository reference (provider key + external repo/project id).
+СИСТЕМА ДОЛЖНА вести таблицу `projects` (внутренний id, name, description, временные метки). Источники МОГУТ группироваться по проекту (`sources.project_id`, nullable). Проект МОЖЕТ нести одну ссылку на связанный git-репозиторий (ключ провайдера + внешний id репозитория/проекта).
 
-# Spec: git-role-inheritance
+# Спека: git-role-inheritance
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: inherited access
+### Требование: наследуемый доступ
 
-For a project linked to a git repository, an authenticated user who holds a role in that repository (collaborator on GitHub; any role on GitLab) SHALL get access to the project in VibeSolver without explicit sharing. The provider-role → access-level mapping SHALL be a registry (extensible per provider).
+Для проекта, связанного с git-репозиторием, аутентифицированный пользователь, имеющий роль в этом репозитории (collaborator на GitHub; любая роль на GitLab), ДОЛЖЕН получить доступ к проекту в VibeSolver без явного расшаривания. Маппинг «роль провайдера → уровень доступа» ДОЛЖЕН быть реестром (расширяемым по провайдерам).
 
-#### Scenario: GitHub collaborator gains access
+#### Сценарий: GitHub-collaborator получает доступ
 
-- **GIVEN** project P linked to GitHub repo owner/name, user U signed in via GitHub with uid that is a collaborator of owner/name
-- **WHEN** U opens P
-- **THEN** access is granted (level per the role mapping)
+- **ДАНО** проект P связан с GitHub-репозиторием owner/name; пользователь U вошёл через GitHub с uid, который является collaborator'ом owner/name
+- **КОГДА** U открывает P
+- **ТО** доступ предоставлен (уровень — согласно маппингу ролей)
 
-### Requirement: admin superrole
+### Требование: суперроль admin
 
-Users with `is_admin=true` SHALL have access to all projects and settings regardless of git roles.
+Пользователи с `is_admin=true` ДОЛЖНЫ иметь доступ ко всем проектам и настройкам независимо от git-ролей.
 
-# Spec: auth-spi
+# Спека: auth-spi
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: pluggable authentication
+### Требование: подключаемая аутентификация
 
-The system SHALL define an `Authenticator` interface (authenticate request → user or null) with implementations: `noauth-local` (active in local mode) and `oauth` (server mode). Adding a password/OIDC/LDAP authenticator later SHALL NOT require changes to resource endpoints.
+СИСТЕМА ДОЛЖНА определить интерфейс `Authenticator` (аутентифицировать запрос → пользователь или null) с реализациями: `noauth-local` (активен в локальном режиме) и `oauth` (серверный режим). Добавление аутентификатора по паролю/OIDC/LDAP позже НЕ ДОЛЖНО требовать изменений resource-endpoint'ов.
 
-# Spec: api-auth
+# Спека: api-auth
 
-## ADDED Requirements
+## Добавленные требования
 
-### Requirement: auth middleware
+### Требование: auth-middleware
 
-All resource endpoints SHALL pass through the authenticator: local mode uses noauth-local (zero friction); server mode requires a session/bearer token from the OAuth flow. The list of protected endpoints is centralized, not scattered decorators.
+Все resource-endpoint'ы ДОЛЖНЫ проходить через аутентификатор: локальный режим использует noauth-local (ноль трения); серверный режим требует session/bearer-токен из OAuth-потока. Список защищённых endpoint'ов централизован, а не разбросан по декораторам.
 
-### Requirement: minimal account UI
+### Требование: минимальный UI аккаунтов
 
-The UI SHALL show the current user, offer OAuth sign-in buttons for configured providers (server mode only), and include a project switcher. Local mode shows the local user without login screens.
+UI ДОЛЖЕН показывать текущего пользователя, предлагать кнопки OAuth-входа для настроенных провайдеров (только в серверном режиме) и включать переключатель проектов. Локальный режим показывает локального пользователя без экранов входа.

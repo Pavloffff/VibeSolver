@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import SettingsPage from '../components/SettingsPage'
-import { I18nProvider } from '../i18n'
+import SettingsPage from '../pages/settings-page'
+import { I18nProvider } from '../shared/i18n'
 
 beforeEach(() => {
   localStorage.setItem('vibesolver.lang', 'ru')

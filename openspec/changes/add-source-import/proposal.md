@@ -1,65 +1,65 @@
-# Proposal: add-source-import
+# Предложение: add-source-import
 
-## Why
+## Зачем
 
-VibeSolver needs a knowledge layer before any agent can reason about a product. The first practical capability is importing source code: the user registers a code source (Git repository, local folder), the system fetches a snapshot, stores raw files in SeaweedFS (S3), and records metadata in PostgreSQL. This also establishes the repo layout, the infra, and both UI frontends (web + desktop) that all later capabilities build on.
+VibeSolver нужен слой знаний до того, как агенты смогут рассуждать о продукте. Первая практическая возможность — импорт исходного кода: пользователь регистрирует источник кода (git-репозиторий, локальную папку), система забирает снимок (snapshot), сохраняет сырые файлы в SeaweedFS (S3) и фиксирует метаданные в PostgreSQL. Это же изменение закладывает структуру репозитория, инфраструктуру и оба UI-фронта (web + desktop), на которых строятся все последующие возможности.
 
-## What Changes
+## Что меняется
 
-### Capability: project-scaffold
+### Возможность: project-scaffold
 
-Monorepo layout (per the official full-stack-fastapi-template convention): `backend/` (Python, uv, goose SQL migrations, FastAPI + Celery + Pydantic), `frontend/web/` (Vite + React + TS strict), `frontend/desktop/` (Electron wrapping the web UI), `build/` (run/build helpers, per-platform scripts), root `compose.yml` + `.env.example`, root build scripts `build-windows.ps1`, `build-linux.sh`, `build-mac.sh` + build instructions in README. CI basics: lint + pytest runnable locally.
+Структура монорепо (по конвенции официального full-stack-fastapi-template): `backend/` (Python, uv, SQL-миграции goose, FastAPI + Celery + Pydantic), `frontend/web/` (Vite + React + TS strict), `frontend/desktop/` (Electron-обёртка над веб-UI), `build/` (помощники запуска/сборки, скрипты для каждой платформы), корневые `compose.yml` + `.env.example`, корневые сборочные скрипты `build-windows.ps1`, `build-linux.sh`, `build-mac.sh` + инструкции по сборке в README. База CI: lint + pytest, запускаемые локально.
 
-### Capability: infra-local-remote
+### Возможность: infra-local-remote
 
-Two run modes for the desktop/web app:
+Два режима работы десктопного/веб-приложения:
 
-- **Local mode**: docker-compose starts in background (postgres+pgvector, redis, seaweedfs master/volume/filer/s3 per the proven `D:\wb\data` pattern on `chrislusf/seaweedfs:4.17`, API, worker) — one click for a non-technical user.
-- **Remote mode**: app connects to an existing server deployment by API base URL.
+- **Локальный режим**: docker-compose стартует в фоне (postgres+pgvector, redis, seaweedfs master/volume/filer/s3 по проверенному паттерну `D:\wb\data` на образе `chrislusf/seaweedfs:4.17`, api, worker) — «один клик» для нетехнического пользователя.
+- **Удалённый режим**: приложение подключается к существующему серверному развёртыванию по API base URL.
 
-The app persists the chosen mode; switching is possible in settings.
+Приложение сохраняет выбранный режим; переключение возможно в настройках.
 
-### Capability: source-registry
+### Возможность: source-registry
 
-REST API + web form to register/list/delete content sources. A source has: type (string key resolved against the connector registry — ships with git, local_folder, svn, hg; extensible), config (JSONB: url/path, branch, token ref), enabled flag. Registering a source enqueues a Celery import task. Import status is visible in UI (pending → running → done/failed).
+REST API + веб-форма для регистрации/просмотра/удаления источников контента. Источник имеет: type (строковый ключ, разрешаемый через реестр коннекторов — в комплекте git, local_folder, svn, hg; расширяемо), config (JSONB: url/path, branch, token ref), флаг enabled. Регистрация источника ставит Celery-задачу импорта в очередь. Статус импорта виден в UI (pending → running → done/failed).
 
-The registry is self-describing: `GET /api/v1/connectors` returns registered connector types with `ready` flags and config schemas; the UI registration form is generated from this response (new connector → form appears without frontend changes).
+Реестр самоописываемый: `GET /api/v1/connectors` возвращает зарегистрированные типы коннекторов с флагами `ready` и конфигурационными схемами; форма регистрации в UI генерируется из этого ответа (новый коннектор → форма появляется без изменений фронтенда).
 
-### Capability: source-connector-spi
+### Возможность: source-connector-spi
 
-Python SPI that all source connectors implement: `validate_config(config) -> None (raises)`, `fetch_snapshot(config) -> Iterator[RawItem]` where `RawItem = {path, content_bytes, meta}`. Connectors are registered in a registry by type key. Adding a new VCS = new connector class + registry entry, no core changes (open-closed).
+Python-SPI, который реализуют все коннекторы источников: `validate_config(config) -> None` (кидает исключение при ошибке) и `fetch_snapshot(config) -> Iterator[RawItem]`, где `RawItem = {path, content_bytes, meta}`. Коннекторы регистрируются в реестре по ключу типа. Добавление новой VCS = новый класс коннектора + запись в реестре, без изменений ядра (open-closed).
 
-### Capability: git-connector
+### Возможность: git-connector
 
-Fully working git connector: clone (with `--depth 1`), checkout branch, iterate files (respecting .gitignore, binary-file exclusion by extension list), stream each file as RawItem.
+Полностью рабочий git-коннектор: clone (с `--depth 1`), checkout ветки, перебор файлов (с учётом .gitignore, исключение бинарных файлов по списку расширений), потоковая отдача каждого файла как RawItem.
 
-### Capability: local-folder-connector
+### Возможность: local-folder-connector
 
-Fully working local-folder connector: recursive walk, same exclusions as git connector.
+Полностью рабочий коннектор локальной папки: рекурсивный обход, те же правила исключений, что у git-коннектора.
 
-### Capability: svn-mercurial-connector-skeletons
+### Возможность: svn-mercurial-connector-skeletons
 
-Registered svn and hg connectors that validate config and raise `NotImplementedError` on fetch — proving SPI extensensibility (for the thesis "connector SPI" argument).
+Зарегистрированные коннекторы svn и hg: валидируют конфиг и кидают `NotImplementedError` на fetch — доказательство расширяемости SPI (для аргумента «connector SPI» в дипломе).
 
-### Capability: import-pipeline
+### Возможность: import-pipeline
 
-Stage-based import pipeline (extensibility-first): a Celery worker consumes an import task and runs a registry of stages over each source snapshot — **fetch** (connector) → **transforms** (empty in this change; future chunking/embedding/docstring stages plug in here without core changes) → **persist** (delegates to a storage strategy). Idempotent re-import (same source → re-fetch, upsert keyed on content_hash — unchanged files are not re-uploaded). No chunking/embedding in this change — the pipeline shape is the point.
+Стадийный конвейер импорта (расширяемость прежде всего): Celery-воркер забирает задачу импорта и прогоняет реестр стадий над каждым снимком источника — **fetch** (коннектор) → **transforms** (в этом изменении пусто; будущие стадии чанкинга/эмбеддинга/докстрингов подключаются сюда без изменений ядра) → **persist** (делегирует стратегии хранения). Идемпотентный реимпорт (тот же источник → повторный fetch, upsert с ключом content_hash — неизменённые файлы не загружаются повторно). Чанкинга/эмбеддинга в этом изменении нет — важна сама форма конвейера.
 
-### Capability: storage-strategies
+### Возможность: storage-strategies
 
-Storage is per-source and registry-driven (same extensibility philosophy as connectors):
+Хранение настраивается по источнику и управляется реестром (та же философия расширяемости, что и у коннекторов):
 
-- `git_reference` (default for git): raw file content is NOT copied — the snapshot stays reproducible via commit SHA, git itself is the source of truth. PostgreSQL stores per-file metadata (path, blob SHA, branch, size, content_hash); SeaweedFS stores only the snapshot manifest (JSON: commit, branches, file list with SHAs). A later chunking stage reads content from the git clone by SHA.
-- `full_copy` (default for local_folder, explicit option for git): full immutable copy of files to SeaweedFS bucket `raw` + the same PG metadata. Required for sources without intrinsic immutability (local folders change/delete).
+- `git_reference` (по умолчанию для git): содержимое файлов НЕ копируется — снимок остаётся воспроизводимым по commit SHA, источником истины является сам git. PostgreSQL хранит метаданные на каждый файл (path, blob SHA, branch, size, content_hash); SeaweedFS хранит только манифест снимка (JSON: commit, ветки, список файлов с SHA). Более поздняя стадия чанкинга читает содержимое из git-клона по SHA.
+- `full_copy` (по умолчанию для local_folder, явная опция для git): полная неизменяемая копия файлов в бакет SeaweedFS `raw` + те же метаданные в PG. Обязательна для источников без собственной неизменяемости (локальные папки меняются и удаляются).
 
-The strategy is a config field on the source (overridable); the default is chosen by the connector. New source types can introduce new strategies without core changes.
+Стратегия — конфигурационное поле источника (можно переопределить); значение по умолчанию выбирает коннектор. Новые типы источников могут вводить новые стратегии без изменений ядра.
 
-## Capabilities with no changes
+## Возможности без изменений
 
-- ticket pipeline (agents), retrieval, chunking, user flows — later changes.
-- model training — non-goal entirely.
+- Конвейер тикетов (агенты), retrieval, чанкинг, user flows — более поздние изменения.
+- Обучение моделей — не-цель в целом.
 
-## Impact
+## Влияние
 
-- New code only; no existing code affected (greenfield).
-- Security: tokens stored in DB referenced by name, never logged; `.env` never committed.
+- Только новый код; существующий код не затрагивается (greenfield).
+- Безопасность: токены хранятся в БД и адресуются по имени, никогда не логируются; `.env` никогда не коммитится.

@@ -1,5 +1,5 @@
 # build
 
-Per-platform build and start helpers (shared logic for build-windows.ps1 / build-linux.sh / build-mac.sh).
+Помощники сборки и запуска для каждой платформы (общая логика для корневых скриптов build-windows.ps1 / build-linux.sh / build-mac.sh).
 
-Placeholder for now: real logic comes with later sections of the add-source-import change.
+Пока заглушка: реальная логика появится в последующих разделах изменения add-source-import.

@@ -1,35 +1,35 @@
-# Tasks: add-accounts-access
+# Задачи: add-accounts-access
 
-## 1. Data model
+## 1. Модель данных
 
-- [ ] 1.1 `кодер`: goose migration — `users` (uuid pk, display_name, is_admin, created_at), `oauth_identities` (user_id fk, provider, provider_uid, provider_username, linked_at, unique(provider, provider_uid)), `projects` (uuid pk, name, description, created_at), `sources.project_id` (nullable fk)
-- [ ] 1.2 `тестер`: migration round-trip tests (up/down on temp PG)
+- [ ] 1.1 `кодер`: goose-миграция — `users` (uuid pk, display_name, is_admin, created_at), `oauth_identities` (user_id fk, provider, provider_uid, provider_username, linked_at, unique(provider, provider_uid)), `projects` (uuid pk, name, description, created_at), `sources.project_id` (nullable fk)
+- [ ] 1.2 `тестер`: тесты миграций в обоих направлениях (up/down на временной Postgres)
 
-## 2. Auth SPI + local mode (tests first)
+## 2. Auth SPI + локальный режим (сначала тесты)
 
-- [ ] 2.1 `тестер`: Authenticator contract tests — noauth-local returns default user; unknown request → null
-- [ ] 2.2 `кодер`: `Authenticator` protocol + registry; `noauth-local` implementation; default local user bootstrap on first request (local mode); FastAPI middleware wiring (centralized dependency)
-- [ ] 2.3 `тестер`: existing endpoints still work in local mode after middleware (regression)
+- [ ] 2.1 `тестер`: контрактные тесты Authenticator — noauth-local возвращает пользователя по умолчанию; неизвестный запрос → null
+- [ ] 2.2 `кодер`: протокол `Authenticator` + реестр; реализация `noauth-local`; бутстрап локального пользователя по умолчанию при первом запросе (локальный режим); подключение FastAPI-middleware (централизованная зависимость)
+- [ ] 2.3 `тестер`: существующие endpoint'ы продолжают работать в локальном режиме после подключения middleware (регрессия)
 
-## 3. OAuth federation (tests first)
+## 3. OAuth-федерация (сначала тесты)
 
-- [ ] 3.1 `тестер`: OAuth flow tests with stubbed provider (state/nonce validation, error paths: denied, bad code)
-- [ ] 3.2 `кодер`: provider registry (github, gitlab; client id/secret from env `VIBESOLVER_OAUTH_<PROVIDER>_*`), /auth/<provider>/start + /auth/<provider>/callback endpoints, session tokens (signed, secret from env), find-or-create user by identity, link-identity flow for existing user
-- [ ] 3.3 `тестер`: git-role inheritance tests — stubbed GitHub API (collaborator check) / GitLab API (project member check) → access granted/denied matrix
+- [ ] 3.1 `тестер`: тесты OAuth-потока с заглушкой провайдера (валидация state/nonce, ошибочные пути: denied, неверный code)
+- [ ] 3.2 `кодер`: реестр провайдеров (github, gitlab; client id/secret из env `VIBESOLVER_OAUTH_<PROVIDER>_*`), endpoint'ы /auth/<provider>/start + /auth/<provider>/callback, сессионные токены (подписанные, секрет из env), find-or-create пользователя по идентичности, поток привязки идентичности для существующего пользователя
+- [ ] 3.3 `тестер`: тесты наследования git-ролей — заглушки GitHub API (проверка collaborator) / GitLab API (проверка участника проекта) → матрица «доступ предоставлен/отказано»
 
-## 4. Projects + access control (tests first)
+## 4. Проекты + контроль доступа (сначала тесты)
 
-- [ ] 4.1 `тестер`: project CRUD tests + access matrix (admin ok, linked-git collaborator ok, stranger 403)
-- [ ] 4.2 `кодер`: projects CRUD endpoints; role-mapping registry (provider role → access level); access check service used by endpoints; sources.project_id assignment endpoint
-- [ ] 4.3 `тестер`: e2e in server mode — OAuth stub login → create project → link repo (stubbed) → second stub user (collaborator) gets access, third (stranger) doesn't
+- [ ] 4.1 `тестер`: тесты CRUD проектов + матрица доступа (admin — ок, collaborator связанного git-репозитория — ок, посторонний — 403)
+- [ ] 4.2 `кодер`: CRUD-endpoint'ы проектов; реестр маппинга ролей (роль провайдера → уровень доступа); сервис проверки доступа, используемый endpoint'ами; endpoint назначения sources.project_id
+- [ ] 4.3 `тестер`: e2e в серверном режиме — вход через заглушку OAuth → создать проект → связать репозиторий (заглушка) → второй заглушечный пользователь (collaborator) получает доступ, третий (посторонний) — нет
 
 ## 5. UI
 
-- [ ] 5.1 `кодер`: account section (current user, provider buttons per GET /auth/providers), project switcher, project CRUD minimal screen
-- [ ] 5.2 i18n keys (en/ru/zh) for all new UI; tests for sign-in screen rendering
+- [ ] 5.1 `кодер`: раздел аккаунтов (текущий пользователь, кнопки провайдеров по GET /auth/providers), переключатель проектов, минимальный экран CRUD проектов
+- [ ] 5.2 i18n-ключи (en/ru/zh) для всего нового UI; тесты рендеринга экрана входа
 
-## 6. Review + integration
+## 6. Ревью + интеграция
 
-- [ ] 6.1 `ревьюер`: security review (token handling, state validation, secrets from env only, no tokens in logs), spec compliance
-- [ ] 6.2 Fix findings; full checks (pytest, ruff, mypy, lint, vitest, build); README note (accounts section in docs/running.md)
-- [ ] 6.3 Update docs; archive change
+- [ ] 6.1 `ревьюер`: ревью безопасности (работа с токенами, валидация state, секреты только из env, токены не попадают в логи), соответствие спеке
+- [ ] 6.2 Исправить замечания; полные проверки (pytest, ruff, mypy, lint, vitest, build); заметка в README (раздел про аккаунты в docs/running.md)
+- [ ] 6.3 Обновить документацию; архивировать изменение
