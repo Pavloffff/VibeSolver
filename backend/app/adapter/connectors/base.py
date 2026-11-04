@@ -12,5 +12,7 @@ class BaseConnector:
     def validate_config(self, config: dict[str, Any]) -> None:
         raise NotImplementedError
 
-    def fetch_snapshot(self, config: dict[str, Any]) -> Iterator[RawItem]:
+    def fetch_snapshot(
+        self, config: dict[str, Any], work_dir: str | None = None
+    ) -> Iterator[RawItem]:
         raise NotImplementedError

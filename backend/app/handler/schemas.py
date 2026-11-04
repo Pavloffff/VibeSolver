@@ -43,3 +43,7 @@ class ImportStatusOut(BaseModel):
     status: str
     progress: int
     error: str | None
+
+
+def sanitize_config(config: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in config.items() if key != "token_ref"}

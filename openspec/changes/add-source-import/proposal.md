@@ -8,7 +8,7 @@ VibeSolver нужен слой знаний до того, как агенты �
 
 ### Возможность: project-scaffold
 
-Структура монорепо (по конвенции официального full-stack-fastapi-template): `backend/` (Python, uv, SQL-миграции goose, FastAPI + Celery + Pydantic), `frontend/web/` (Vite + React + TS strict), `frontend/desktop/` (Electron-обёртка над веб-UI), `build/` (помощники запуска/сборки, скрипты для каждой платформы), корневые `compose.yml` + `.env.example`, корневые сборочные скрипты `build-windows.ps1`, `build-linux.sh`, `build-mac.sh` + инструкции по сборке в README. База CI: lint + pytest, запускаемые локально.
+Структура монорепо (по конвенции официального full-stack-fastapi-template): `backend/` (Python, uv, SQL-миграции goose, FastAPI + Celery + Pydantic), `frontend/web/` (Vite + React + TS strict), `frontend/desktop/` (Electron-обёртка над веб-UI), `build/` (помощники запуска/сборки, скрипты для каждой платформы), корневые `docker-compose.yml` + `.env.example`, корневые сборочные скрипты `build-windows.ps1`, `build-linux.sh`, `build-mac.sh` + инструкции по сборке в README. База CI: lint + pytest, запускаемые локально.
 
 ### Возможность: infra-local-remote
 

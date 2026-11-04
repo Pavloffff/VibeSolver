@@ -17,5 +17,7 @@ class SvnConnector(BaseConnector):
         if not isinstance(url, str) or not url.strip():
             raise ConfigValidationError("svn source config requires a non-empty 'url'")
 
-    def fetch_snapshot(self, config: dict[str, Any]) -> Iterator[RawItem]:
+    def fetch_snapshot(
+        self, config: dict[str, Any], work_dir: str | None = None
+    ) -> Iterator[RawItem]:
         raise NotImplementedError

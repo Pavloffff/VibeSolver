@@ -1,17 +1,21 @@
 from app.usecase.connectors_info import ConnectorsInfoUsecase
 from app.usecase.import_pipeline import (
     STAGE_REGISTRY,
+    FetchItems,
     ImportContext,
+    PersistItems,
     PipelineStage,
-    SyncImportRunner,
+    run_stages,
 )
 from app.usecase.sources import SourceUsecase
 
 __all__ = [
     "STAGE_REGISTRY",
     "ConnectorsInfoUsecase",
+    "FetchItems",
     "ImportContext",
+    "PersistItems",
     "PipelineStage",
     "SourceUsecase",
-    "SyncImportRunner",
+    "run_stages",
 ]

@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, ClassVar, Protocol
 
 from app.domain.entities import ConnectorDescriptor, ImportSnapshot, RawItem
@@ -20,6 +20,21 @@ class ConnectorCatalog(Protocol):
     def descriptors(self) -> list[ConnectorDescriptor]: ...
 
 
+_default_connector_catalog_factory: Callable[[], ConnectorCatalog] | None = None
+
+
+def set_default_connector_catalog(factory: Callable[[], ConnectorCatalog]) -> None:
+    global _default_connector_catalog_factory
+    _default_connector_catalog_factory = factory
+
+
+def default_connector_catalog() -> ConnectorCatalog:
+    factory = _default_connector_catalog_factory
+    if factory is None:
+        raise RuntimeError("default connector catalog is not configured")
+    return factory()
+
+
 class SourceRepository(Protocol):
     async def add(self, source_type: str, name: str, config: dict[str, Any]) -> Source: ...
 
@@ -34,6 +49,18 @@ class SourceRepository(Protocol):
 
 class ImportRepository(Protocol):
     async def latest_for_source(self, source_id: int) -> Import | None: ...
+
+
+class ImportFileRepository(Protocol):
+    def upsert_file(
+        self,
+        source_id: int,
+        branch: str,
+        path: str,
+        size_bytes: int,
+        storage_key: str,
+        content_hash: str,
+    ) -> None: ...
 
 
 class ImportEnqueuer(Protocol):

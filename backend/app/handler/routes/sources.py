@@ -19,6 +19,7 @@ from app.handler.schemas import (
     LastImportOut,
     SourceCreate,
     SourceOut,
+    sanitize_config,
 )
 from app.usecase.sources import SourceUsecase
 
@@ -58,7 +59,7 @@ async def create_source(payload: SourceCreate, session: SessionDep) -> SourceOut
         type=source.type,
         name=source.name,
         enabled=source.enabled,
-        config=source.config,
+        config=sanitize_config(source.config),
         last_import=None,
     )
 
@@ -73,7 +74,7 @@ async def list_sources(session: SessionDep) -> list[SourceOut]:
             type=source.type,
             name=source.name,
             enabled=source.enabled,
-            config=source.config,
+            config=sanitize_config(source.config),
             last_import=(
                 LastImportOut(
                     status=snapshot.status,

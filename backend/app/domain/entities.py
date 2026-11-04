@@ -15,6 +15,12 @@ class UnknownConnectorError(ValueError):
         self.source_type = source_type
 
 
+class UnknownStorageStrategyError(ValueError):
+    def __init__(self, strategy_key: str) -> None:
+        super().__init__(f"unknown storage strategy: {strategy_key}")
+        self.strategy_key = strategy_key
+
+
 class SourceNotFoundError(LookupError):
     pass
 

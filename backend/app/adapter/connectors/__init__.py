@@ -4,7 +4,7 @@ from app.adapter.connectors.hg import MercurialConnector
 from app.adapter.connectors.local_folder import LocalFolderConnector
 from app.adapter.connectors.svn import SvnConnector
 from app.domain.entities import ConnectorDescriptor
-from app.domain.repositories import ConnectorSPI
+from app.domain.repositories import ConnectorSPI, set_default_connector_catalog
 
 __all__ = [
     "CONNECTOR_REGISTRY",
@@ -43,3 +43,6 @@ class ConnectorCatalogImpl:
             )
             for connector in CONNECTOR_REGISTRY.values()
         ]
+
+
+set_default_connector_catalog(ConnectorCatalogImpl)
