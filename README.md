@@ -38,7 +38,7 @@
 1. Склонируйте репозиторий:
 
 ```
-git clone [EMAIL]:Pavloffff/VibeSolver.git
+git clone git@github.com:Pavloffff/VibeSolver.git
 ```
 
 2. Перейдите в директорию проекта:
