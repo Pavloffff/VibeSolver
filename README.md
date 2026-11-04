@@ -1,1 +1,1 @@
-# VibeSplver
+# VibeSolver
