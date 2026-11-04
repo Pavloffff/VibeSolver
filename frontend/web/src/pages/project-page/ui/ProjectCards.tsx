@@ -90,17 +90,6 @@ export function IndexingCard({ t, canIndex, notice, onIndex }: { t: Translate; c
   )
 }
 
-export function IssuesCard({ t, notice, onAdd }: { t: Translate; notice: string | null; onAdd: () => void }) {
-  return (
-    <section className="project-card issues-card">
-      <div className="project-card-heading"><div><h2>{t('project.issues')}</h2><p>{t('project.issuesHint')}</p></div><span className="badge badge-muted">{t('project.comingSoon')}</span></div>
-      <div className="issues-empty"><span className="empty-state-icon">＋</span><p>{t('project.noIssues')}</p></div>
-      <button type="button" className="btn" onClick={onAdd}>{t('project.addIssue')}</button>
-      {notice !== null && <small className="success-note issue-notice">{notice}</small>}
-    </section>
-  )
-}
-
 function ResourceList({ title, items, empty }: { title: string; items: ProjectResource[]; empty: string }) {
   return <div className="resource-list"><h3>{title}</h3>{items.length === 0 ? <p className="resource-empty">{empty}</p> : items.map((item, index) => <div className="resource-item" key={`${item.name}-${index}`}><span className="resource-file-icon">ZIP</span><span>{item.name}</span><span className="badge">{item.type}</span></div>)}</div>
 }

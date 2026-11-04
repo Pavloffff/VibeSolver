@@ -14,14 +14,8 @@ const project: Source = {
   last_import: null,
 }
 
-const connectors = [{
-  type: 'git',
-  ready: true,
-  config_schema: { fields: [{ name: 'url', label: 'URL', kind: 'text' as const, required: true }] },
-}]
-
 function renderProject(api: ApiClient) {
-  render(<I18nProvider><ProjectPage sourceId={1} api={api} onBack={() => {}} /></I18nProvider>)
+  render(<I18nProvider><ProjectPage sourceId={1} api={api} onBack={() => {}} onOpenIssues={() => {}} /></I18nProvider>)
 }
 
 beforeEach(() => {
@@ -43,7 +37,8 @@ describe('ProjectPage', () => {
     expect(screen.getByRole('link', { name: /Open on GitHub/ })).toHaveAttribute('href', project.config?.url)
     expect(screen.getByText('clone failed')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Start indexing' })).toBeDisabled()
-    expect(screen.getAllByRole('button', { name: 'Edit project' })).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Edit project' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'To issues' })).toBeInTheDocument()
   })
 
   it('adds an archive as project documentation', async () => {
@@ -65,27 +60,5 @@ describe('ProjectPage', () => {
     }))
     expect(await screen.findByText('guide.zip')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Start indexing' })).toBeEnabled()
-  })
-
-  it('saves edited connector settings and queues a replacement import', async () => {
-    const updated = { ...project, name: 'fixed repo', config: { url: 'https://github.com/acme/fixed.git' } }
-    const api = {
-      getSource: vi.fn().mockResolvedValue(project),
-      getProjectStats: vi.fn().mockResolvedValue({ file_count: 0 }),
-      getImportStatus: vi.fn().mockResolvedValue({ status: 'failed', progress: 0, error: 'clone failed' }),
-      listConnectors: vi.fn().mockResolvedValue(connectors),
-      updateSource: vi.fn().mockResolvedValue(updated),
-      startImport: vi.fn().mockResolvedValue({ task_id: 'retry-1' }),
-    } as unknown as ApiClient
-    renderProject(api)
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Edit project' }))[0]!)
-    fireEvent.change(await screen.findByLabelText('URL *'), { target: { value: 'https://github.com/acme/fixed.git' } })
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'fixed repo' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save and re-import' }))
-
-    await waitFor(() => expect(api.updateSource).toHaveBeenCalledWith(1, 'fixed repo', {
-      url: 'https://github.com/acme/fixed.git',
-    }))
-    expect(api.startImport).toHaveBeenCalledWith(1)
   })
 })

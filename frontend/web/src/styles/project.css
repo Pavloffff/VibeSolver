@@ -54,3 +54,8 @@
 .issue-notice { margin-left: 10px; }
 .project-loading { min-height: 240px; }
 .project-loading p { color: var(--text-muted); }
+.issues-page-empty { min-height: 250px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.issues-page-empty .empty-state-icon { margin: 0 0 12px; }
+.issues-page-empty h2 { margin: 0; font-size: 16px; }
+.issues-page-empty p { max-width: 480px; color: var(--text-muted); font-size: 13px; }
+.issues-page-empty .issues-notice { border-radius: 7px; background: var(--surface-muted); padding: 9px 12px; }

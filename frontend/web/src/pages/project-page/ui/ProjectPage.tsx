@@ -3,8 +3,7 @@ import { ApiError, getApiClient, getErrorMessage } from '../../../shared/api/cli
 import type { ApiClient } from '../../../shared/api/client'
 import type { ImportStatus, ProjectResource, ProjectStats, Source } from '../../../shared/api/types'
 import { useT } from '../../../shared/i18n'
-import SourceForm from '../../../features/add-source'
-import { ImportCard, IndexingCard, IssuesCard, ResourcesCard, StatsCard } from './ProjectCards'
+import { ImportCard, IndexingCard, ResourcesCard, StatsCard } from './ProjectCards'
 
 type ResourceCategory = 'documentation' | 'user_flow'
 
@@ -12,11 +11,12 @@ interface Props {
   sourceId: number
   api?: ApiClient
   onBack: () => void
+  onOpenIssues: () => void
   onNameChange?: (name: string) => void
   launchError?: string | null
 }
 
-export default function ProjectPage({ sourceId, api = getApiClient(), onBack, onNameChange, launchError = null }: Props) {
+export default function ProjectPage({ sourceId, api = getApiClient(), onBack, onOpenIssues, onNameChange, launchError = null }: Props) {
   const { t } = useT()
   const [source, setSource] = useState<Source | null>(null)
   const [stats, setStats] = useState<ProjectStats | null>(null)
@@ -25,9 +25,7 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
   const [statusPollErrors, setStatusPollErrors] = useState(0)
   const [error, setError] = useState<string | null>(launchError)
   const [uploading, setUploading] = useState<ResourceCategory | null>(null)
-  const [editing, setEditing] = useState(false)
   const [indexNotice, setIndexNotice] = useState<string | null>(null)
-  const [issueNotice, setIssueNotice] = useState<string | null>(null)
 
   const refreshStats = useCallback(async () => {
     setStats(await api.getProjectStats(sourceId))
@@ -171,8 +169,8 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
           <p>{t('project.subtitle')}</p>
         </div>
         <div className="project-heading-actions">
+          <button type="button" className="btn btn-primary btn-large" onClick={onOpenIssues}>{t('project.goToIssues')}</button>
           {githubUrl !== null && <a className="btn" href={githubUrl} target="_blank" rel="noreferrer">{t('project.openGithub')} ↗</a>}
-          <button type="button" className="btn" onClick={() => setEditing(true)}>{t('project.edit')}</button>
         </div>
       </div>
 
@@ -181,7 +179,6 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
         <div className="import-error-panel">
           <div><strong>{t('project.importFailed')}</strong><p>{importStatus.error ?? t('project.unknownImportError')}</p></div>
           <div className="import-error-actions">
-            <button type="button" className="btn" onClick={() => setEditing(true)}>{t('project.editAndRetry')}</button>
             <button type="button" className="btn btn-primary" onClick={() => void startImport()}>{t('project.retry')}</button>
           </div>
         </div>
@@ -192,10 +189,8 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
         <StatsCard t={t} stats={stats} />
         <ResourcesCard t={t} documentation={documentation} userFlows={userFlows} uploading={uploading} onAdd={(category, file) => void addResource(category, file)} />
         <IndexingCard t={t} canIndex={canIndex} notice={indexNotice} onIndex={() => setIndexNotice(t('project.indexSoon'))} />
-        <IssuesCard t={t} notice={issueNotice} onAdd={() => setIssueNotice(t('project.issuesSoon'))} />
       </div>
 
-              {editing && <div className="modal-overlay"><div className="modal"><h2>{t('project.editTitle')}</h2><SourceForm api={api} source={source} onCreated={(updated, importError) => { setSource(updated); onNameChange?.(updated.name); setEditing(false); setError(importError ?? null); if (importError === undefined) setImportStatus({ status: 'pending', progress: 0, error: null }) }} onClose={() => setEditing(false)} /></div></div>}
     </div>
   )
 }

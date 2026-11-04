@@ -3,6 +3,7 @@ import ModeScreen from '../pages/mode-page'
 import SettingsPage from '../pages/settings-page'
 import SourcesPage from '../pages/sources-page'
 import ProjectPage from '../pages/project-page'
+import IssuesPage from '../pages/issues-page'
 import { getApiBaseUrl } from '../shared/config'
 import { useT } from '../shared/i18n'
 import { getSettings, getTheme, saveTheme } from '../shared/state/settings'
@@ -10,6 +11,7 @@ import type { AppSettings, Theme } from '../shared/state/settings'
 import type { Source } from '../shared/api/types'
 
 type Tab = 'sources' | 'settings'
+type ProjectSection = 'overview' | 'issues'
 
 function tabClass(active: boolean): string {
   return active ? 'side-link side-link-active' : 'side-link'
@@ -28,6 +30,7 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(() => getTheme())
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null)
+  const [projectSection, setProjectSection] = useState<ProjectSection>('overview')
   const [projectLaunchError, setProjectLaunchError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -58,6 +61,7 @@ export default function App() {
               setTab('sources')
               setSelectedProjectId(null)
               setSelectedProjectName(null)
+              setProjectSection('overview')
               setProjectLaunchError(null)
             }}
           >
@@ -96,9 +100,9 @@ export default function App() {
       <main className="main-panel">
         <div className="topbar">
           <div className="breadcrumb">
-            <button type="button" className="breadcrumb-link" onClick={() => { setTab('sources'); setSelectedProjectId(null); setSelectedProjectName(null); setProjectLaunchError(null) }}>{t('app.workspace')}</button>
+            <button type="button" className="breadcrumb-link" onClick={() => { setTab('sources'); setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }}>{t('app.workspace')}</button>
             {tab === 'settings' ? <><span className="breadcrumb-separator">/</span><strong>{t('common.settings')}</strong></> : <>
-              {selectedProjectId !== null && <><span className="breadcrumb-separator">/</span><button type="button" className="breadcrumb-link" onClick={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectLaunchError(null) }}>{t('common.sources')}</button><span className="breadcrumb-separator">/</span><strong>{selectedProjectName ?? t('project.title')}</strong></>}
+              {selectedProjectId !== null && <><span className="breadcrumb-separator">/</span><button type="button" className="breadcrumb-link" onClick={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }}>{t('common.sources')}</button><span className="breadcrumb-separator">/</span>{projectSection === 'issues' ? <><button type="button" className="breadcrumb-link" onClick={() => setProjectSection('overview')}>{selectedProjectName ?? t('project.title')}</button><span className="breadcrumb-separator">/</span><strong>{t('project.issues')}</strong></> : <strong>{selectedProjectName ?? t('project.title')}</strong>}</>}
               {selectedProjectId === null && <><span className="breadcrumb-separator">/</span><strong>{t('common.sources')}</strong></>}
             </>}
           </div>
@@ -108,11 +112,15 @@ export default function App() {
         {tab === 'sources' ? (
           selectedProjectId === null ? (
             <SourcesPage
-              onProjectSelected={(id) => { setProjectLaunchError(null); setSelectedProjectName(null); setSelectedProjectId(id) }}
-              onProjectCreated={(source: Source, importError) => { setProjectLaunchError(importError ?? null); setSelectedProjectName(source.name); setSelectedProjectId(source.id) }}
+              onProjectSelected={(id) => { setProjectLaunchError(null); setSelectedProjectName(null); setProjectSection('overview'); setSelectedProjectId(id) }}
+              onProjectCreated={(source: Source, importError) => { setProjectLaunchError(importError ?? null); setSelectedProjectName(source.name); setProjectSection('overview'); setSelectedProjectId(source.id) }}
             />
           ) : (
-            <ProjectPage key={selectedProjectId} sourceId={selectedProjectId} launchError={projectLaunchError} onNameChange={setSelectedProjectName} onBack={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectLaunchError(null) }} />
+            projectSection === 'issues' ? (
+              <IssuesPage projectName={selectedProjectName ?? t('project.title')} />
+            ) : (
+              <ProjectPage key={selectedProjectId} sourceId={selectedProjectId} launchError={projectLaunchError} onNameChange={setSelectedProjectName} onOpenIssues={() => setProjectSection('issues')} onBack={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }} />
+            )
           )
         ) : (
           <SettingsPage
