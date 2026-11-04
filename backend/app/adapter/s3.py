@@ -1,11 +1,15 @@
+from typing import TYPE_CHECKING
+
 import boto3
 from botocore.exceptions import ClientError
-from mypy_boto3_s3 import S3Client
 
 from app.adapter.config import Settings
 
+if TYPE_CHECKING:
+    from mypy_boto3_s3 import S3Client
 
-def make_s3_client(settings: Settings) -> S3Client:
+
+def make_s3_client(settings: Settings) -> "S3Client":
     return boto3.client(
         "s3",
         endpoint_url=settings.s3_endpoint,
@@ -14,7 +18,7 @@ def make_s3_client(settings: Settings) -> S3Client:
     )
 
 
-def ensure_bucket(client: S3Client, bucket: str) -> None:
+def ensure_bucket(client: "S3Client", bucket: str) -> None:
     try:
         client.head_bucket(Bucket=bucket)
     except ClientError:
