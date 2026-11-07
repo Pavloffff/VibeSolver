@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["*"]
     max_upload_bytes: int = 500 * 1024 * 1024
     max_archive_unpacked_bytes: int = 2 * 1024 * 1024 * 1024
+    model_secrets_key: str | None = None
+    provider_request_timeout_seconds: int = 20
+    freetoken_api_url: str = "http://host.docker.internal:1920/v1"
+    ollama_api_url: str = "http://host.docker.internal:11434"
+    openrouter_api_url: str = "https://openrouter.ai/api/v1"
 
 
 @lru_cache

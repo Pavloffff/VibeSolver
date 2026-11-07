@@ -1,5 +1,11 @@
 from app.adapter.repositories.import_files import ImportFileSqlRepository
 from app.adapter.repositories.imports import ImportSqlRepository
+from app.adapter.repositories.model_providers import ModelProviderSqlRepository
 from app.adapter.repositories.sources import SourceSqlRepository
 
-__all__ = ["ImportFileSqlRepository", "ImportSqlRepository", "SourceSqlRepository"]
+__all__ = [
+    "ImportFileSqlRepository",
+    "ImportSqlRepository",
+    "ModelProviderSqlRepository",
+    "SourceSqlRepository",
+]

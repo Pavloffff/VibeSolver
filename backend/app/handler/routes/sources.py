@@ -4,9 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapter import celery_tasks
+from app.adapter.config import get_settings
 from app.adapter.connectors import ConnectorCatalogImpl
 from app.adapter.db import get_session
 from app.adapter.repositories import ImportSqlRepository, SourceSqlRepository
+from app.adapter.s3 import make_s3_client
 from app.domain.entities import (
     ConfigValidationError,
     ImportNotFoundError,
@@ -17,12 +19,15 @@ from app.handler.schemas import (
     ImportEnqueueOut,
     ImportStatusOut,
     LastImportOut,
+    ResourceContentOut,
+    ResourceContentUpdate,
     SourceCreate,
     SourceOut,
     SourceStatsOut,
     SourceUpdate,
     sanitize_config,
 )
+from app.usecase.project_resources import ProjectResourceNotFoundError, ProjectResourceUsecase
 from app.usecase.sources import SourceUsecase
 
 router = APIRouter(prefix="/sources", tags=["sources"])
@@ -44,6 +49,15 @@ def build_usecase(session: AsyncSession) -> SourceUsecase:
         imports=ImportSqlRepository(session),
         connectors=ConnectorCatalogImpl(),
         enqueue=enqueue,
+    )
+
+
+def build_resource_usecase(session: AsyncSession) -> ProjectResourceUsecase:
+    settings = get_settings()
+    return ProjectResourceUsecase(
+        sources=SourceSqlRepository(session),
+        s3=make_s3_client(settings),
+        bucket=settings.s3_bucket_raw,
     )
 
 
@@ -167,6 +181,49 @@ async def get_source_stats(source_id: int, session: SessionDep) -> SourceStatsOu
     except SourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
     return SourceStatsOut(file_count=count)
+
+
+@router.get("/{source_id}/resources/{category}/{resource_id}", response_model=ResourceContentOut)
+async def get_markdown_resource(
+    source_id: int, category: str, resource_id: str, session: SessionDep
+) -> ResourceContentOut:
+    try:
+        content = await build_resource_usecase(session).read_markdown(source_id, category, resource_id)
+    except SourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProjectResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Markdown resource not found") from exc
+    return ResourceContentOut(content=content)
+
+
+@router.patch("/{source_id}/resources/{category}/{resource_id}", status_code=204)
+async def update_markdown_resource(
+    source_id: int,
+    category: str,
+    resource_id: str,
+    payload: ResourceContentUpdate,
+    session: SessionDep,
+) -> None:
+    try:
+        await build_resource_usecase(session).update_markdown(
+            source_id, category, resource_id, payload.content
+        )
+    except SourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProjectResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Markdown resource not found") from exc
+
+
+@router.delete("/{source_id}/resources/{category}/{resource_id}", status_code=204)
+async def delete_project_resource(
+    source_id: int, category: str, resource_id: str, session: SessionDep
+) -> None:
+    try:
+        await build_resource_usecase(session).delete_resource(source_id, category, resource_id)
+    except SourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProjectResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project resource not found") from exc
 
 
 @router.delete("/{source_id}", status_code=204)

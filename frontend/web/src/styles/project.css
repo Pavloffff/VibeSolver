@@ -33,13 +33,22 @@
 .stat-item + .stat-item { border: 0; padding-left: 16px; }
 .stat-item strong { font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif; font-size: 26px; letter-spacing: -.7px; }
 .stat-item span { color: var(--text-muted); font-size: 11px; }
-.resource-type-label { max-width: 360px; margin: 14px 0 0; }
+.resource-type-label { width: min(240px, 100%); margin: 0; }
 .resource-list h3 { margin: 0 0 10px; font-size: 12px; font-weight: 700; }
 .resource-empty { margin: 0; color: var(--text-faint); font-size: 11px; }
 .resource-item { display: flex; align-items: center; gap: 9px; margin: 7px 0; border: 1px solid var(--border-subtle); border-radius: 7px; padding: 8px 9px; font-size: 11px; }
 .resource-item > span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resource-open { display: flex; min-width: 0; flex: 1; align-items: center; gap: 9px; border: 0; background: transparent; color: inherit; padding: 0; text-align: left; cursor: pointer; }
+.resource-open:hover .resource-name { color: var(--accent); text-decoration: underline; }
 .resource-file-icon { display: grid; width: 28px; height: 27px; place-items: center; border-radius: 5px; background: var(--accent-soft); color: var(--accent); font-size: 8px; font-weight: 800; }
 .resource-actions { margin-top: 10px; }
+.resource-add-actions { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 9px; }
+.resource-add-actions .resource-type-label { flex: 0 1 240px; }
+.resource-add-actions .file-action { margin-bottom: 0; }
+.resource-item .resource-name { flex: 1; min-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resource-replace { flex: none; }
+.resource-delete { color: var(--danger, #b42318); }
+.resource-generation-notice { display: block; margin-top: 12px; color: var(--text-muted); font-size: 12px; }
 .file-action { position: relative; margin: 0; }
 .file-action input[type='file'] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .file-action input[type='file']:disabled { cursor: wait; }
@@ -59,3 +68,21 @@
 .issues-page-empty h2 { margin: 0; font-size: 16px; }
 .issues-page-empty p { max-width: 480px; color: var(--text-muted); font-size: 13px; }
 .issues-page-empty .issues-notice { border-radius: 7px; background: var(--surface-muted); padding: 9px 12px; }
+.markdown-editor { display: flex; width: min(980px, 100%); flex-direction: column; }
+.markdown-editor-heading, .markdown-editor-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.markdown-editor-heading { margin-bottom: 16px; }
+.markdown-editor-heading > div { display: flex; min-width: 0; align-items: center; gap: 12px; }
+.markdown-editor-heading h2 { overflow: hidden; margin: 0; text-overflow: ellipsis; white-space: nowrap; }
+.markdown-editor-toolbar { margin-bottom: 12px; }
+.markdown-editor-modes, .markdown-merge-controls { display: flex; align-items: center; gap: 8px; }
+.btn-selected { border-color: var(--accent); color: var(--accent); }
+.markdown-merge-controls select { min-width: 220px; margin: 0; }
+.markdown-preview, .markdown-textarea { width: 100%; min-height: min(55vh, 520px); overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); color: var(--text); padding: 16px; font: 13px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.markdown-preview { margin: 0; }
+.markdown-textarea { resize: vertical; }
+.markdown-merge-notice { display: block; margin-top: 10px; font-size: 12px; }
+@media (max-width: 760px) {
+  .markdown-editor-toolbar { align-items: stretch; flex-direction: column; }
+  .markdown-merge-controls select { min-width: 0; flex: 1; }
+  .markdown-preview, .markdown-textarea { min-height: 45vh; }
+}

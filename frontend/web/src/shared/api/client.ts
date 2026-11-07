@@ -1,7 +1,19 @@
 import { getApiBaseUrl } from '../config'
 import { t } from '../i18n'
 import { getLang } from '../state/settings'
-import type { ConnectorInfo, ImportStatus, ProjectResource, ProjectStats, Source } from './types'
+import type {
+  AvailableModel,
+  ConnectorInfo,
+  ImportStatus,
+  ModelProvider,
+  ModelProviderType,
+  OllamaPullProgress,
+  ProjectModelSelections,
+  ProjectResource,
+  ProjectStats,
+  Source,
+  WorkspaceModel,
+} from './types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -96,6 +108,36 @@ export class ApiClient {
     })
   }
 
+  uploadMarkdown(file: File): Promise<{ upload_key: string }> {
+    const form = new FormData()
+    form.append('file', file)
+    return this.request<{ upload_key: string }>('/api/v1/uploads/markdown', {
+      method: 'POST',
+      body: form,
+      headers: {},
+    })
+  }
+
+  getResourceContent(sourceId: number, category: string, resourceId: string): Promise<{ content: string }> {
+    return this.request<{ content: string }>(
+      `/api/v1/sources/${sourceId}/resources/${encodeURIComponent(category)}/${encodeURIComponent(resourceId)}`,
+    )
+  }
+
+  updateResourceContent(sourceId: number, category: string, resourceId: string, content: string): Promise<void> {
+    return this.request<void>(
+      `/api/v1/sources/${sourceId}/resources/${encodeURIComponent(category)}/${encodeURIComponent(resourceId)}`,
+      { method: 'PATCH', body: JSON.stringify({ content }) },
+    )
+  }
+
+  deleteResource(sourceId: number, category: string, resourceId: string): Promise<void> {
+    return this.request<void>(
+      `/api/v1/sources/${sourceId}/resources/${encodeURIComponent(category)}/${encodeURIComponent(resourceId)}`,
+      { method: 'DELETE' },
+    )
+  }
+
   deleteSource(id: number): Promise<void> {
     return this.request<void>(`/api/v1/sources/${id}`, { method: 'DELETE' })
   }
@@ -110,6 +152,115 @@ export class ApiClient {
 
   getImportStatus(id: number): Promise<ImportStatus> {
     return this.request<ImportStatus>(`/api/v1/sources/${id}/import`)
+  }
+
+  listModelProviderTypes(): Promise<ModelProviderType[]> {
+    return this.request<ModelProviderType[]>('/api/v1/models/providers/catalog')
+  }
+
+  listModelProviders(): Promise<ModelProvider[]> {
+    return this.request<ModelProvider[]>('/api/v1/models/providers')
+  }
+
+  testModelProvider(input: { provider_type: string; name: string; base_url?: string; api_key?: string }): Promise<{ status: string; available_models: number }> {
+    return this.request('/api/v1/models/providers/test', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  createModelProvider(input: { provider_type: string; name: string; base_url?: string; api_key?: string }): Promise<ModelProvider> {
+    return this.request<ModelProvider>('/api/v1/models/providers', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  updateModelProvider(id: number, input: { name: string; base_url?: string; api_key?: string }): Promise<ModelProvider> {
+    return this.request<ModelProvider>(`/api/v1/models/providers/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+  }
+
+  testSavedModelProvider(id: number): Promise<{ status: string; available_models: number }> {
+    return this.request<{ status: string; available_models: number }>(`/api/v1/models/providers/${id}/test`, { method: 'POST' })
+  }
+
+  deleteModelProvider(id: number): Promise<void> {
+    return this.request<void>(`/api/v1/models/providers/${id}`, { method: 'DELETE' })
+  }
+
+  listWorkspaceModels(capability?: string): Promise<WorkspaceModel[]> {
+    const query = capability ? `?capability=${encodeURIComponent(capability)}` : ''
+    return this.request<WorkspaceModel[]>(`/api/v1/models${query}`)
+  }
+
+  listAvailableModels(providerId: number, capability?: string): Promise<AvailableModel[]> {
+    const query = capability ? `?capability=${encodeURIComponent(capability)}` : ''
+    return this.request<AvailableModel[]>(`/api/v1/models/providers/${providerId}/available${query}`)
+  }
+
+  syncProviderModels(providerId: number): Promise<WorkspaceModel[]> {
+    return this.request<WorkspaceModel[]>(`/api/v1/models/providers/${providerId}/sync`, { method: 'POST' })
+  }
+
+  addProviderModel(providerId: number, providerModelId: string): Promise<WorkspaceModel> {
+    return this.request<WorkspaceModel>(`/api/v1/models/providers/${providerId}/models`, {
+      method: 'POST', body: JSON.stringify({ provider_model_id: providerModelId }),
+    })
+  }
+
+  deleteWorkspaceModel(modelId: number): Promise<void> {
+    return this.request<void>(`/api/v1/models/${modelId}`, { method: 'DELETE' })
+  }
+
+  async pullOllamaModel(
+    providerId: number,
+    modelId: string,
+    onProgress: (event: OllamaPullProgress) => void,
+    signal: AbortSignal,
+  ): Promise<void> {
+    let response: Response
+    try {
+      response = await fetch(`${this.getBaseUrl().replace(/\/+$/, '')}/api/v1/models/providers/${providerId}/models/pull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_id: modelId }),
+        signal,
+      })
+    } catch (error) {
+      if (signal.aborted) return
+      throw new ApiError(0, t(getLang(), 'errors.serverUnavailable', { message: getErrorMessage(error) }))
+    }
+    if (!response.ok) {
+      const body = await response.text()
+      throw new ApiError(response.status, t(getLang(), 'errors.httpError', { status: String(response.status), body }))
+    }
+    if (response.body === null) throw new ApiError(response.status, t(getLang(), 'errors.invalidResponse'))
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        if (line.trim()) {
+          const event = JSON.parse(line) as OllamaPullProgress
+          onProgress(event)
+          if (event.error) throw new ApiError(502, event.error)
+        }
+      }
+      if (done) break
+    }
+    if (buffer.trim()) {
+      const event = JSON.parse(buffer) as OllamaPullProgress
+      onProgress(event)
+      if (event.error) throw new ApiError(502, event.error)
+    }
+  }
+
+  getProjectModelSelections(sourceId: number): Promise<ProjectModelSelections> {
+    return this.request<ProjectModelSelections>(`/api/v1/models/projects/${sourceId}/selections`)
+  }
+
+  setProjectModelSelection(sourceId: number, role: string, modelId: number | null): Promise<ProjectModelSelections> {
+    return this.request<ProjectModelSelections>(`/api/v1/models/projects/${sourceId}/selections/${encodeURIComponent(role)}`, {
+      method: 'PUT', body: JSON.stringify({ model_id: modelId }),
+    })
   }
 
   async checkHealth(): Promise<void> {

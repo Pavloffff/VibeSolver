@@ -4,13 +4,14 @@ import SettingsPage from '../pages/settings-page'
 import SourcesPage from '../pages/sources-page'
 import ProjectPage from '../pages/project-page'
 import IssuesPage from '../pages/issues-page'
+import ModelsPage from '../pages/models-page'
 import { getApiBaseUrl } from '../shared/config'
 import { useT } from '../shared/i18n'
 import { getSettings, getTheme, saveTheme } from '../shared/state/settings'
 import type { AppSettings, Theme } from '../shared/state/settings'
 import type { Source } from '../shared/api/types'
 
-type Tab = 'sources' | 'settings'
+type Tab = 'sources' | 'models' | 'settings'
 type ProjectSection = 'overview' | 'issues'
 
 function tabClass(active: boolean): string {
@@ -54,6 +55,20 @@ export default function App() {
           <span>VibeSolver</span>
         </div>
         <nav className="side-nav" aria-label={t('app.navigation')}>
+          <button
+            type="button"
+            className={tabClass(tab === 'models')}
+            onClick={() => {
+              setTab('models')
+              setSelectedProjectId(null)
+              setSelectedProjectName(null)
+              setProjectSection('overview')
+              setProjectLaunchError(null)
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5h6l1 3H8l1-3Zm-2.5 5h11A2.5 2.5 0 0 1 20 11v7.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V11a2.5 2.5 0 0 1 2.5-2.5ZM8 13h8m-8 3h5" /></svg>
+            {t('models.title')}
+          </button>
           <button
             type="button"
             className={tabClass(tab === 'sources')}
@@ -101,7 +116,7 @@ export default function App() {
         <div className="topbar">
           <div className="breadcrumb">
             <button type="button" className="breadcrumb-link" onClick={() => { setTab('sources'); setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }}>{t('app.workspace')}</button>
-            {tab === 'settings' ? <><span className="breadcrumb-separator">/</span><strong>{t('common.settings')}</strong></> : <>
+            {tab === 'settings' ? <><span className="breadcrumb-separator">/</span><strong>{t('common.settings')}</strong></> : tab === 'models' ? <><span className="breadcrumb-separator">/</span><strong>{t('models.title')}</strong></> : <>
               {selectedProjectId !== null && <><span className="breadcrumb-separator">/</span><button type="button" className="breadcrumb-link" onClick={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }}>{t('common.sources')}</button><span className="breadcrumb-separator">/</span>{projectSection === 'issues' ? <><button type="button" className="breadcrumb-link" onClick={() => setProjectSection('overview')}>{selectedProjectName ?? t('project.title')}</button><span className="breadcrumb-separator">/</span><strong>{t('project.issues')}</strong></> : <strong>{selectedProjectName ?? t('project.title')}</strong>}</>}
               {selectedProjectId === null && <><span className="breadcrumb-separator">/</span><strong>{t('common.sources')}</strong></>}
             </>}
@@ -109,7 +124,7 @@ export default function App() {
           <span className="topbar-context">{t(settings.mode === 'local' ? 'common.local' : 'common.remote')}</span>
         </div>
         <div className="content">
-        {tab === 'sources' ? (
+        {tab === 'models' ? <ModelsPage /> : tab === 'sources' ? (
           selectedProjectId === null ? (
             <SourcesPage
               onProjectSelected={(id) => { setProjectLaunchError(null); setSelectedProjectName(null); setProjectSection('overview'); setSelectedProjectId(id) }}

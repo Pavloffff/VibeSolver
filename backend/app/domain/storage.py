@@ -25,6 +25,8 @@ class S3Like(Protocol):
 
     def head_object(self, *, Bucket: str, Key: str) -> Mapping[str, Any]: ...
 
+    def delete_object(self, *, Bucket: str, Key: str) -> Mapping[str, Any]: ...
+
 
 class StorageStrategy(Protocol):
     def persist(

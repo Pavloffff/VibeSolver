@@ -234,3 +234,5 @@ frontend/desktop/release/
 .DS_Store
 Thumbs.db
 
+.pytest-tmp
+.pytest-tmp/

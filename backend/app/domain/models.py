@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     Text,
     func,
 )
@@ -63,6 +64,51 @@ class ImportedFile(Base):
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
     content_hash: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class ModelProviderConnection(Base):
+    __tablename__ = "model_provider_connections"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    provider_type: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    base_url: Mapped[str] = mapped_column(Text, nullable=False)
+    credential_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class WorkspaceModel(Base):
+    __tablename__ = "workspace_models"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    provider_connection_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("model_provider_connections.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider_model_id: Mapped[str] = mapped_column(Text, nullable=False)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    capabilities: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    progress: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ProjectModelAssignment(Base):
+    __tablename__ = "project_model_assignments"
+
+    source_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("sources.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(Text, primary_key=True)
+    model_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workspace_models.id", ondelete="CASCADE"), nullable=False
+    )
     imported_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
