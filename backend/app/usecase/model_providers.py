@@ -69,10 +69,15 @@ class ModelProviderUsecase:
         self, provider_type: str, name: str, base_url: str | None, api_key: str | None
     ) -> ProviderConnection:
         connection, definition = self._candidate(provider_type, name, base_url, api_key)
-        await asyncio.to_thread(definition.adapter.list_models, connection, self._request_timeout)
-        return await self._models.create_connection(
+        available_models = await asyncio.to_thread(
+            definition.adapter.list_models, connection, self._request_timeout
+        )
+        saved_connection = await self._models.create_connection(
             connection.provider_type, connection.name, connection.base_url, connection.api_key
         )
+        if definition.sync_all_models:
+            await self._models.upsert_models(saved_connection.id, available_models)
+        return saved_connection
 
     async def update_connection(
         self,
@@ -89,12 +94,16 @@ class ModelProviderUsecase:
             api_key if api_key else stored.api_key,
             connection_id,
         )
-        await asyncio.to_thread(definition.adapter.list_models, connection, self._request_timeout)
+        available_models = await asyncio.to_thread(
+            definition.adapter.list_models, connection, self._request_timeout
+        )
         updated = await self._models.update_connection(
             connection_id, connection.name, connection.base_url, api_key
         )
         if updated is None:
             raise ModelProviderNotFoundError(str(connection_id))
+        if definition.sync_all_models:
+            await self._models.upsert_models(updated.id, available_models)
         return updated
 
     async def delete_connection(self, connection_id: int) -> None:

@@ -51,24 +51,10 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">V</span>
+          <img className="brand-mark" src="/icon.png" alt="" />
           <span>VibeSolver</span>
         </div>
         <nav className="side-nav" aria-label={t('app.navigation')}>
-          <button
-            type="button"
-            className={tabClass(tab === 'models')}
-            onClick={() => {
-              setTab('models')
-              setSelectedProjectId(null)
-              setSelectedProjectName(null)
-              setProjectSection('overview')
-              setProjectLaunchError(null)
-            }}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5h6l1 3H8l1-3Zm-2.5 5h11A2.5 2.5 0 0 1 20 11v7.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V11a2.5 2.5 0 0 1 2.5-2.5ZM8 13h8m-8 3h5" /></svg>
-            {t('models.title')}
-          </button>
           <button
             type="button"
             className={tabClass(tab === 'sources')}
@@ -82,6 +68,20 @@ export default function App() {
           >
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v6H4V5.5ZM4 12h6v8H5.5A1.5 1.5 0 0 1 4 18.5V12Zm8-8h6.5A1.5 1.5 0 0 1 20 5.5V10h-8V4Zm0 8h8v6.5a1.5 1.5 0 0 1-1.5 1.5H12v-8Z" /></svg>
             {t('common.sources')}
+          </button>
+          <button
+            type="button"
+            className={tabClass(tab === 'models')}
+            onClick={() => {
+              setTab('models')
+              setSelectedProjectId(null)
+              setSelectedProjectName(null)
+              setProjectSection('overview')
+              setProjectLaunchError(null)
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5h6l1 3H8l1-3Zm-2.5 5h11A2.5 2.5 0 0 1 20 11v7.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V11a2.5 2.5 0 0 1 2.5-2.5ZM8 13h8m-8 3h5" /></svg>
+            {t('models.title')}
           </button>
           <button
             type="button"

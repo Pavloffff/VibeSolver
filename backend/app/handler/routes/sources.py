@@ -1,6 +1,8 @@
+import mimetypes
+from pathlib import PurePosixPath
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapter import celery_tasks
@@ -16,6 +18,7 @@ from app.domain.entities import (
     UnknownConnectorError,
 )
 from app.handler.schemas import (
+    DocumentationImportOut,
     ImportEnqueueOut,
     ImportStatusOut,
     LastImportOut,
@@ -27,10 +30,17 @@ from app.handler.schemas import (
     SourceUpdate,
     sanitize_config,
 )
+from app.usecase.documentation_fs import (
+    DocumentationPathError,
+    is_supported_archive,
+    normalize_documentation_path,
+    unpack_archive,
+)
 from app.usecase.project_resources import ProjectResourceNotFoundError, ProjectResourceUsecase
 from app.usecase.sources import SourceUsecase
 
 router = APIRouter(prefix="/sources", tags=["sources"])
+READ_CHUNK_BYTES = 1024 * 1024
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -181,6 +191,74 @@ async def get_source_stats(source_id: int, session: SessionDep) -> SourceStatsOu
     except SourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
     return SourceStatsOut(file_count=count)
+
+
+@router.post("/{source_id}/resources/import", response_model=DocumentationImportOut)
+@router.post("/{source_id}/documentation/import", response_model=DocumentationImportOut)
+async def import_documentation(
+    source_id: int,
+    session: SessionDep,
+    file: Annotated[UploadFile, File()],
+    parent_path: Annotated[str, Form()] = "",
+    category: Annotated[str, Form()] = "documentation",
+    origin: Annotated[str, Form()] = "uploaded",
+) -> DocumentationImportOut:
+    settings = get_settings()
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(READ_CHUNK_BYTES):
+        total += len(chunk)
+        if total > settings.max_upload_bytes:
+            raise HTTPException(status_code=413, detail="upload too large")
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    filename = PurePosixPath((file.filename or "").replace("\\", "/")).name
+    if not filename:
+        raise HTTPException(status_code=422, detail="file name is required")
+    try:
+        parent = normalize_documentation_path(parent_path) if parent_path else ""
+        if is_supported_archive(data):
+            unpacked = unpack_archive(filename, data, settings.max_archive_unpacked_bytes)
+            files = {
+                normalize_documentation_path(f"{parent}/{path}" if parent else path): body
+                for path, body in unpacked.items()
+            }
+        else:
+            path = normalize_documentation_path(f"{parent}/{filename}" if parent else filename)
+            if path.casefold().endswith(".md"):
+                try:
+                    data.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise HTTPException(status_code=422, detail="Markdown file must use UTF-8 encoding") from exc
+            files = {path: data}
+    except DocumentationPathError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    content_types = {path: mimetypes.guess_type(path)[0] or "application/octet-stream" for path in files}
+    try:
+        result = await build_resource_usecase(session).import_documentation(
+            source_id, files, content_types, category, origin
+        )
+    except SourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    if result["conflicts"]:
+        raise HTTPException(status_code=409, detail={"message": "documentation paths already exist with different content", "conflicts": result["conflicts"]})
+    return DocumentationImportOut(**result)
+
+
+@router.delete("/{source_id}/resources/folder", status_code=204)
+@router.delete("/{source_id}/documentation/folder", status_code=204)
+async def delete_documentation_folder(
+    source_id: int, path: str, session: SessionDep, category: str = "documentation"
+) -> None:
+    try:
+        safe_path = normalize_documentation_path(path)
+        await build_resource_usecase(session).delete_documentation_folder(source_id, safe_path, category)
+    except DocumentationPathError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProjectResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Documentation folder not found") from exc
 
 
 @router.get("/{source_id}/resources/{category}/{resource_id}", response_model=ResourceContentOut)

@@ -1,4 +1,6 @@
 .mode-screen { width: min(880px, calc(100% - 32px)); margin: 64px auto; text-align: center; }
+.mode-brand { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.mode-brand img { width: 44px; height: 44px; object-fit: contain; }
 .mode-screen h1 { margin: 0; font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif; font-size: 32px; letter-spacing: -1px; }
 .mode-screen > p { color: var(--text-muted); font-size: 14px; }
 .cards { display: flex; gap: 16px; justify-content: center; margin: 28px 0; }

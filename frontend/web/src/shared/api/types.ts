@@ -16,6 +16,7 @@ export interface ProjectResource {
   id?: string
   type: string
   name: string
+  path?: string
   config: Record<string, unknown>
 }
 

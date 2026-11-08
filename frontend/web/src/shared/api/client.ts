@@ -118,6 +118,23 @@ export class ApiClient {
     })
   }
 
+  importLocalResource(sourceId: number, category: string, file: File, parentPath = '', origin = 'uploaded'): Promise<{ added: string[]; unchanged: string[]; conflicts: { path: string; existing_id: string }[] }> {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('parent_path', parentPath)
+    form.append('category', category)
+    form.append('origin', origin)
+    return this.request(`/api/v1/sources/${sourceId}/resources/import`, {
+      method: 'POST',
+      body: form,
+      headers: {},
+    })
+  }
+
+  deleteDocumentationFolder(sourceId: number, path: string, category = 'documentation'): Promise<void> {
+    return this.request<void>(`/api/v1/sources/${sourceId}/resources/folder?path=${encodeURIComponent(path)}&category=${encodeURIComponent(category)}`, { method: 'DELETE' })
+  }
+
   getResourceContent(sourceId: number, category: string, resourceId: string): Promise<{ content: string }> {
     return this.request<{ content: string }>(
       `/api/v1/sources/${sourceId}/resources/${encodeURIComponent(category)}/${encodeURIComponent(resourceId)}`,

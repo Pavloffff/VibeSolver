@@ -6,13 +6,18 @@ export interface MaterialGenerationRequest {
   source: 'code' | 'documentation'
 }
 
-export interface GeneratedMarkdown {
+export interface GeneratedFile {
   name: string
   content: string
+  path?: string
+}
+
+export interface GeneratedDocumentation {
+  files: GeneratedFile[]
 }
 
 export interface MaterialGenerator {
-  generate(request: MaterialGenerationRequest): Promise<GeneratedMarkdown>
+  generate(request: MaterialGenerationRequest): Promise<GeneratedDocumentation>
 }
 
 export class MaterialGeneratorUnavailableError extends Error {
@@ -32,7 +37,7 @@ class MaterialGeneratorRegistry {
     }
   }
 
-  async generate(request: MaterialGenerationRequest): Promise<GeneratedMarkdown> {
+  async generate(request: MaterialGenerationRequest): Promise<GeneratedDocumentation> {
     if (this.generator === null) throw new MaterialGeneratorUnavailableError()
     return this.generator.generate(request)
   }

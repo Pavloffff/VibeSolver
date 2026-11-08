@@ -34,9 +34,10 @@
 .stat-item strong { font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif; font-size: 26px; letter-spacing: -.7px; }
 .stat-item span { color: var(--text-muted); font-size: 11px; }
 .resource-type-label { width: min(240px, 100%); margin: 0; }
-.resource-list h3 { margin: 0 0 10px; font-size: 12px; font-weight: 700; }
+.resource-list h3 { margin: 0; font-size: 13px; font-weight: 650; }
 .resource-empty { margin: 0; color: var(--text-faint); font-size: 11px; }
-.resource-item { display: flex; align-items: center; gap: 9px; margin: 7px 0; border: 1px solid var(--border-subtle); border-radius: 7px; padding: 8px 9px; font-size: 11px; }
+.resource-item { display: flex; min-height: 34px; align-items: center; gap: 8px; margin: 0; border-bottom: 1px solid var(--border-subtle); padding-top: 3px; padding-right: 7px; padding-bottom: 3px; font-size: 12px; }
+.resource-item:hover, .resource-tree-row:hover { background: var(--surface-hover); }
 .resource-item > span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resource-open { display: flex; min-width: 0; flex: 1; align-items: center; gap: 9px; border: 0; background: transparent; color: inherit; padding: 0; text-align: left; cursor: pointer; }
 .resource-open:hover .resource-name { color: var(--accent); text-decoration: underline; }
@@ -46,8 +47,24 @@
 .resource-add-actions .resource-type-label { flex: 0 1 240px; }
 .resource-add-actions .file-action { margin-bottom: 0; }
 .resource-item .resource-name { flex: 1; min-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resource-tree-row { display: flex; align-items: center; gap: 8px; min-height: 34px; margin: 0; border-bottom: 1px solid var(--border-subtle); padding-right: 7px; }
+.resource-tree-toggle { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; padding: 6px 5px; font-size: 12px; }
+.resource-tree-add { position: relative; display: inline-flex; flex: none; align-items: center; justify-content: center; width: 30px; height: 27px; margin: 0; padding: 0; opacity: 0; transition: opacity 120ms ease; }
+.resource-tree-add span { font-size: 20px; line-height: 1; }
+.resource-tree-add input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.resource-tree-row:hover .resource-tree-add, .resource-tree-row:focus-within .resource-tree-add, .resource-tree-root-row:hover .resource-tree-add, .resource-tree-root-row:focus-within .resource-tree-add { opacity: 1; }
+.resource-folder-delete, .resource-delete { color: var(--danger); opacity: 0; transition: opacity 120ms ease; }
+.resource-trash-icon { display: block; width: 15px; height: 15px; }
+.resource-tree-row:hover .resource-folder-delete, .resource-tree-row:focus-within .resource-folder-delete { opacity: 1; }
+.resource-tree-root-row { display: flex; min-height: 38px; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--border); padding: 0 5px 7px 2px; margin-bottom: 2px; }
+.resource-tree-root-actions { display: flex; align-items: center; gap: 7px; }
+.resource-confluence-add { font-size: 11px; }
+.resource-tree-root-actions select { width: auto; min-width: 105px; margin: 0; padding: 5px 26px 5px 8px; font-size: 11px; }
+.resource-file-icon { width: 22px; height: 22px; flex: none; border-radius: 4px; background: transparent; color: var(--text-muted); font-size: 8px; }
+.resource-open { min-height: 30px; gap: 8px; }
+.resource-delete { opacity: 0; }
+.resource-item:hover .resource-delete, .resource-item:focus-within .resource-delete { opacity: 1; }
 .resource-replace { flex: none; }
-.resource-delete { color: var(--danger, #b42318); }
 .resource-generation-notice { display: block; margin-top: 12px; color: var(--text-muted); font-size: 12px; }
 .file-action { position: relative; margin: 0; }
 .file-action input[type='file'] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }

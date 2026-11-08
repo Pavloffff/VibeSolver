@@ -109,6 +109,3 @@ class ProjectModelAssignment(Base):
     model_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("workspace_models.id", ondelete="CASCADE"), nullable=False
     )
-    imported_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )

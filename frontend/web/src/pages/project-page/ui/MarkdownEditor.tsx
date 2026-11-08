@@ -14,13 +14,14 @@ interface Props {
   t: Translate
   resource: ProjectResource
   content: string
+  isMarkdown: boolean
   candidates: MarkdownResourceReference[]
   onRead: (reference: MarkdownResourceReference) => Promise<string>
   onSave: (content: string) => Promise<void>
   onClose: () => void
 }
 
-export default function MarkdownEditor({ t, resource, content: initialContent, candidates, onRead, onSave, onClose }: Props) {
+export default function MarkdownEditor({ t, resource, content: initialContent, isMarkdown, candidates, onRead, onSave, onClose }: Props) {
   const [content, setContent] = useState(initialContent)
   const [mode, setMode] = useState<'preview' | 'edit'>('preview')
   const [mergeId, setMergeId] = useState('')
@@ -64,7 +65,7 @@ export default function MarkdownEditor({ t, resource, content: initialContent, c
     <div className="modal-overlay">
       <section className="modal markdown-editor" role="dialog" aria-modal="true" aria-labelledby="markdown-editor-title">
         <div className="markdown-editor-heading">
-          <div><h2 id="markdown-editor-title">{resource.name}</h2><span className="badge">{t('materials.markdown')}</span></div>
+          <div><h2 id="markdown-editor-title">{resource.name}</h2><span className="badge">{t(isMarkdown ? 'materials.markdown' : 'materials.textFile')}</span></div>
           <button type="button" className="text-button" onClick={onClose} aria-label={t('common.cancel')}>×</button>
         </div>
         <div className="markdown-editor-toolbar">
@@ -73,11 +74,11 @@ export default function MarkdownEditor({ t, resource, content: initialContent, c
             <button type="button" className={mode === 'edit' ? 'btn btn-selected' : 'btn'} onClick={() => setMode('edit')}>{t('materials.edit')}</button>
           </div>
           <div className="markdown-merge-controls">
-            <select aria-label={t('materials.mergeWith')} value={mergeId} onChange={(event) => setMergeId(event.target.value)}>
+            {isMarkdown && <select aria-label={t('materials.mergeWith')} value={mergeId} onChange={(event) => setMergeId(event.target.value)}>
               <option value="">{t('materials.selectMergeSource')}</option>
               {candidates.map(({ category, resource: candidate }) => <option key={`${category}-${candidate.id}`} value={candidate.id}>{candidate.name}</option>)}
-            </select>
-            <button type="button" className="btn" onClick={() => void merge()} disabled={!mergeId || busy}>{t('materials.merge')}</button>
+            </select>}
+            {isMarkdown && <button type="button" className="btn" onClick={() => void merge()} disabled={!mergeId || busy}>{t('materials.merge')}</button>}
           </div>
         </div>
         {mode === 'preview' ? <pre className="markdown-preview">{content}</pre> : <textarea className="markdown-textarea" aria-label={t('materials.edit')} value={content} onChange={(event) => { setContent(event.target.value); setMergeNotice(false) }} />}

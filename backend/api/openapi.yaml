@@ -147,6 +147,140 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sources/{source_id}/documentation/import:
+    post:
+      tags:
+      - sources
+      summary: Import Documentation
+      operationId: import_documentation_api_v1_sources__source_id__documentation_import_post
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_import_documentation_api_v1_sources__source_id__documentation_import_post'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentationImportOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sources/{source_id}/resources/import:
+    post:
+      tags:
+      - sources
+      summary: Import Documentation
+      operationId: import_documentation_api_v1_sources__source_id__resources_import_post
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_import_documentation_api_v1_sources__source_id__resources_import_post'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentationImportOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sources/{source_id}/documentation/folder:
+    delete:
+      tags:
+      - sources
+      summary: Delete Documentation Folder
+      operationId: delete_documentation_folder_api_v1_sources__source_id__documentation_folder_delete
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      - name: path
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Path
+      - name: category
+        in: query
+        required: false
+        schema:
+          type: string
+          default: documentation
+          title: Category
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sources/{source_id}/resources/folder:
+    delete:
+      tags:
+      - sources
+      summary: Delete Documentation Folder
+      operationId: delete_documentation_folder_api_v1_sources__source_id__resources_folder_delete
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      - name: path
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Path
+      - name: category
+        in: query
+        required: false
+        schema:
+          type: string
+          default: documentation
+          title: Category
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sources/{source_id}/resources/{category}/{resource_id}:
     get:
       tags:
@@ -806,6 +940,50 @@ paths:
                 title: Response Health Health Get
 components:
   schemas:
+    Body_import_documentation_api_v1_sources__source_id__documentation_import_post:
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
+        parent_path:
+          type: string
+          title: Parent Path
+          default: ''
+        category:
+          type: string
+          title: Category
+          default: documentation
+        origin:
+          type: string
+          title: Origin
+          default: uploaded
+      type: object
+      required:
+      - file
+      title: Body_import_documentation_api_v1_sources__source_id__documentation_import_post
+    Body_import_documentation_api_v1_sources__source_id__resources_import_post:
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
+        parent_path:
+          type: string
+          title: Parent Path
+          default: ''
+        category:
+          type: string
+          title: Category
+          default: documentation
+        origin:
+          type: string
+          title: Origin
+          default: uploaded
+      type: object
+      required:
+      - file
+      title: Body_import_documentation_api_v1_sources__source_id__resources_import_post
     Body_upload_archive_api_v1_uploads_post:
       properties:
         file:
@@ -890,6 +1068,31 @@ components:
       - ready
       - config_schema
       title: ConnectorInfo
+    DocumentationImportOut:
+      properties:
+        added:
+          items:
+            type: string
+          type: array
+          title: Added
+        unchanged:
+          items:
+            type: string
+          type: array
+          title: Unchanged
+        conflicts:
+          items:
+            additionalProperties:
+              type: string
+            type: object
+          type: array
+          title: Conflicts
+      type: object
+      required:
+      - added
+      - unchanged
+      - conflicts
+      title: DocumentationImportOut
     HTTPValidationError:
       properties:
         detail:

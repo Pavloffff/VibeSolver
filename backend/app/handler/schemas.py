@@ -60,6 +60,12 @@ class ResourceContentUpdate(BaseModel):
     content: str = Field(max_length=5_000_000)
 
 
+class DocumentationImportOut(BaseModel):
+    added: list[str]
+    unchanged: list[str]
+    conflicts: list[dict[str, str]]
+
+
 class ImportEnqueueOut(BaseModel):
     task_id: str
 

@@ -30,6 +30,7 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
   const [uploading, setUploading] = useState<ResourceCategory | null>(null)
   const [indexNotice, setIndexNotice] = useState<string | null>(null)
   const [generationNotice, setGenerationNotice] = useState<string | null>(null)
+  const [confluenceNotice, setConfluenceNotice] = useState<string | null>(null)
   const [activeMarkdown, setActiveMarkdown] = useState<MarkdownResourceReference & { content: string } | null>(null)
   const [embeddingModels, setEmbeddingModels] = useState<WorkspaceModel[]>([])
   const [chatModels, setChatModels] = useState<WorkspaceModel[]>([])
@@ -163,26 +164,17 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
     return () => { cancelled = true; clearTimeout(timer) }
   }, [api, importStatus?.progress, importStatus?.status, refreshStats, sourceId, statusPollErrors, t])
 
-  const addResource = async (category: ResourceCategory, type: 'archive' | 'markdown', file: File, origin = 'uploaded') => {
+  const addResource = async (category: ResourceCategory, file: File, origin = 'uploaded', parentPath = '') => {
     if (source === null) return
     setUploading(category)
     setIndexNotice(null)
     try {
-      const uploaded = type === 'markdown' ? await api.uploadMarkdown(file) : await api.uploadArchive(file)
-      const resources = source.config?.resources as Record<string, ProjectResource[]> | undefined
-      const existing = resources?.[category] ?? []
-      const resource: ProjectResource = {
-        id: crypto.randomUUID(),
-        type,
-        name: file.name,
-        config: { upload_key: uploaded.upload_key, origin },
-      }
-      const updated = await api.updateSource(source.id, source.name, {}, {
-        [category]: [...existing, resource],
-      })
+      const path = [parentPath, file.name].filter(Boolean).join('/')
+      await api.importLocalResource(source.id, category, file, parentPath, origin)
+      const updated = await api.getSource(source.id)
       setSource(updated)
       onNameChange?.(updated.name)
-      return resource
+      return ((updated.config?.resources as Record<string, ProjectResource[]> | undefined)?.[category] ?? []).find((item) => (item.path ?? item.name) === path)
     } catch (requestError) {
       setError(getErrorMessage(requestError))
     } finally {
@@ -239,6 +231,34 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
     }
   }
 
+  const deleteDocumentationFolder = async (category: ResourceCategory, path: string) => {
+    if (source === null || !window.confirm(t('materials.confirmDeleteFolder').replace('{name}', path))) return
+    setUploading(category)
+    setError(null)
+    try {
+      await api.deleteDocumentationFolder(source.id, path, category)
+      const resources = source.config?.resources as Record<string, ProjectResource[]> | undefined
+      const categoryItems = resources?.[category] ?? []
+      const removed = categoryItems.filter((item) => (item.path ?? item.name).startsWith(`${path}/`))
+      const removedIds = new Set(removed.map((item) => item.id))
+      setSource({
+        ...source,
+        config: {
+          ...source.config,
+          resources: {
+            ...resources,
+            [category]: categoryItems.filter((item) => !removedIds.has(item.id)),
+          },
+        },
+      })
+      if (activeMarkdown?.category === category && removedIds.has(activeMarkdown.resource.id)) setActiveMarkdown(null)
+    } catch (requestError) {
+      setError(getErrorMessage(requestError))
+    } finally {
+      setUploading(null)
+    }
+  }
+
   const openMarkdown = async (category: ResourceCategory, resource: ProjectResource) => {
     if (source === null || resource.id === undefined) return
     try {
@@ -263,9 +283,16 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
         category,
         source: category === 'documentation' ? 'code' : 'documentation',
       })
-      const resource = await addResource(category, 'markdown', new File([draft.content], draft.name, { type: 'text/markdown' }), 'generated')
-      if (resource !== undefined && resource.id !== undefined) {
-        setActiveMarkdown({ category, resource, content: draft.content })
+      let firstGenerated: { resource: ProjectResource; content: string } | null = null
+      for (const file of draft.files) {
+        const path = file.path ?? file.name
+        const parentPath = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+        const filename = path.split('/').at(-1) ?? file.name
+        const resource = await addResource(category, new File([file.content], filename, { type: 'text/markdown' }), 'generated', parentPath)
+        if (firstGenerated === null && resource !== undefined) firstGenerated = { resource, content: file.content }
+      }
+      if (firstGenerated?.resource.id !== undefined) {
+        setActiveMarkdown({ category, resource: firstGenerated.resource, content: firstGenerated.content })
       }
     } catch (generationError) {
       if (generationError instanceof MaterialGeneratorUnavailableError) {
@@ -320,30 +347,34 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
 
       <div className="project-grid">
         <ImportCard t={t} status={importStatus} onRetry={() => void startImport()} />
-        <StatsCard t={t} stats={stats} />
         <IndexingCard t={t} canIndex={canIndex} notice={indexNotice} onIndex={() => setIndexNotice(t('project.indexSoon'))} models={embeddingModels} selectedModelId={modelSelections.indexing} onModelChange={(modelId) => void changeModelSelection('indexing', modelId)} />
+        <StatsCard t={t} stats={stats} />
         <ResourcesCard
           t={t}
           documentation={documentation}
           userFlows={userFlows}
           uploading={uploading}
           generationNotice={generationNotice}
+          confluenceNotice={confluenceNotice}
+          onAddConfluence={() => setConfluenceNotice(t('materials.confluenceStub'))}
           generationModels={chatModels}
           generationModelId={modelSelections.documentation_generation}
           onGenerationModelChange={(modelId) => void changeModelSelection('documentation_generation', modelId)}
-          onAdd={(category, type, file) => void addResource(category, type, file)}
+          onAdd={(category, file, parentPath) => void addResource(category, file, 'uploaded', parentPath)}
           onReplace={(category, index, file) => void replaceArchive(category, index, file)}
           onOpenMarkdown={(category, resource) => void openMarkdown(category, resource)}
           onDelete={(category, resource) => void deleteResource(category, resource)}
+          onDeleteFolder={(category, path) => void deleteDocumentationFolder(category, path)}
           onGenerate={(category) => void generateMaterial(category)}
         />
       </div>
-      {activeMarkdown !== null && (
+          {activeMarkdown !== null && (
         <MarkdownEditor
           key={`${activeMarkdown.category}-${activeMarkdown.resource.id}`}
           t={t}
           resource={activeMarkdown.resource}
           content={activeMarkdown.content}
+          isMarkdown={activeMarkdown.resource.type === 'markdown'}
           candidates={[...documentation.map((resource) => ({ category: 'documentation' as const, resource })), ...userFlows.map((resource) => ({ category: 'user_flow' as const, resource }))].filter((reference) => reference.resource.type === 'markdown' && reference.resource.id !== activeMarkdown.resource.id)}
           onRead={readMarkdown}
           onSave={(content) => api.updateResourceContent(source.id, activeMarkdown.category, activeMarkdown.resource.id!, content)}

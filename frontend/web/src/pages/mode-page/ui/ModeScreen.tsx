@@ -45,7 +45,10 @@ export default function ModeScreen({ onDone }: Props) {
 
   return (
     <div className="mode-screen">
-      <h1>VibeSolver</h1>
+      <div className="mode-brand">
+        <img src="/icon.png" alt="" />
+        <h1>VibeSolver</h1>
+      </div>
       <p>{t('modeScreen.prompt')}</p>
       <div className="cards">
         <div

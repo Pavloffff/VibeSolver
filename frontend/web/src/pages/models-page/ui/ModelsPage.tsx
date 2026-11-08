@@ -88,9 +88,15 @@ export default function ModelsPage() {
         base_url: form.baseUrl,
         ...(form.apiKey ? { api_key: form.apiKey } : {}),
       }
-      if (editingProvider === null) await api.createModelProvider(payload)
+      let createdProvider: ModelProvider | null = null
+      if (editingProvider === null) createdProvider = await api.createModelProvider(payload)
       else await api.updateModelProvider(editingProvider.id, { name: form.name, base_url: form.baseUrl, ...(form.apiKey ? { api_key: form.apiKey } : {}) })
       await refresh()
+      if (createdProvider?.provider_type === 'openrouter') {
+        setAvailableModels(await api.listAvailableModels(createdProvider.id))
+        setSearch('')
+        setBrowseProvider(createdProvider)
+      }
       setForm(null)
       setEditingProvider(null)
       setNotice(t(editingProvider === null ? 'models.providerAdded' : 'models.providerUpdated'))
