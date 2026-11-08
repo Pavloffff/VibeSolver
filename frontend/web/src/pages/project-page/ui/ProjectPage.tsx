@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, getApiClient, getErrorMessage } from '../../../shared/api/client'
 import type { ApiClient } from '../../../shared/api/client'
-import type { ImportStatus, ProjectModelSelections, ProjectResource, ProjectStats, Source, WorkspaceModel } from '../../../shared/api/types'
+import type { ImportStatus, ProjectIndexStatus, ProjectIndexType, ProjectModelSelections, ProjectResource, ProjectStats, Source, WorkspaceModel } from '../../../shared/api/types'
 import { useT } from '../../../shared/i18n'
-import { materialGeneratorRegistry, MaterialGeneratorUnavailableError } from '../../../shared/materials/generation'
 import { ImportCard, IndexingCard, ResourcesCard, StatsCard } from './ProjectCards'
 import MarkdownEditor from './MarkdownEditor'
 import type { MarkdownResourceReference } from './MarkdownEditor'
@@ -24,17 +23,24 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
   const [source, setSource] = useState<Source | null>(null)
   const [stats, setStats] = useState<ProjectStats | null>(null)
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null)
+  const [indexingStatus, setIndexingStatus] = useState<ProjectIndexStatus | null>(null)
   const [missingPolls, setMissingPolls] = useState(0)
   const [statusPollErrors, setStatusPollErrors] = useState(0)
   const [error, setError] = useState<string | null>(launchError)
   const [uploading, setUploading] = useState<ResourceCategory | null>(null)
+  const [generatingCategory, setGeneratingCategory] = useState<ResourceCategory | null>(null)
   const [indexNotice, setIndexNotice] = useState<string | null>(null)
   const [generationNotice, setGenerationNotice] = useState<string | null>(null)
+  const [generationNoticeCategory, setGenerationNoticeCategory] = useState<ResourceCategory | null>(null)
   const [confluenceNotice, setConfluenceNotice] = useState<string | null>(null)
   const [activeMarkdown, setActiveMarkdown] = useState<MarkdownResourceReference & { content: string } | null>(null)
   const [embeddingModels, setEmbeddingModels] = useState<WorkspaceModel[]>([])
   const [chatModels, setChatModels] = useState<WorkspaceModel[]>([])
   const [modelSelections, setModelSelections] = useState<ProjectModelSelections>({ indexing: null, documentation_generation: null })
+
+  const refreshIndexingStatus = useCallback(async () => {
+    setIndexingStatus(await api.getProjectIndexStatus(sourceId))
+  }, [api, sourceId])
 
   const refreshStats = useCallback(async () => {
     setStats(await api.getProjectStats(sourceId))
@@ -118,6 +124,29 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
 
   useEffect(() => {
     let cancelled = false
+    void api.getProjectIndexStatus(sourceId).then((status) => {
+      if (!cancelled) setIndexingStatus(status)
+    }).catch((requestError: unknown) => {
+      if (!cancelled) setError(getErrorMessage(requestError))
+    })
+    return () => { cancelled = true }
+  }, [api, sourceId])
+
+  useEffect(() => {
+    if (!indexingStatus?.indexes.some((index) => index.status === 'queued' || index.status === 'running')) return
+    let cancelled = false
+    const timer = setTimeout(() => {
+      void api.getProjectIndexStatus(sourceId).then((status) => {
+        if (!cancelled) setIndexingStatus(status)
+      }).catch((requestError: unknown) => {
+        if (!cancelled) setError(getErrorMessage(requestError))
+      })
+    }, 1400)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [api, indexingStatus, sourceId])
+
+  useEffect(() => {
+    let cancelled = false
     void Promise.all([api.listWorkspaceModels(), api.getProjectModelSelections(sourceId)]).then(([models, selections]) => {
       if (cancelled) return
       setEmbeddingModels(models.filter((model) => model.capabilities.includes('embedding')))
@@ -173,6 +202,7 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
       await api.importLocalResource(source.id, category, file, parentPath, origin)
       const updated = await api.getSource(source.id)
       setSource(updated)
+      await refreshIndexingStatus()
       onNameChange?.(updated.name)
       return ((updated.config?.resources as Record<string, ProjectResource[]> | undefined)?.[category] ?? []).find((item) => (item.path ?? item.name) === path)
     } catch (requestError) {
@@ -199,6 +229,7 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
       }
       const updated = await api.updateSource(source.id, source.name, {}, { [category]: existing })
       setSource(updated)
+      await refreshIndexingStatus()
     } catch (requestError) {
       setError(getErrorMessage(requestError))
     } finally {
@@ -212,6 +243,7 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
     setError(null)
     try {
       await api.deleteResource(source.id, category, resource.id)
+      await refreshIndexingStatus()
       const resources = source.config?.resources as Record<string, ProjectResource[]> | undefined
       setSource({
         ...source,
@@ -237,6 +269,7 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
     setError(null)
     try {
       await api.deleteDocumentationFolder(source.id, path, category)
+      await refreshIndexingStatus()
       const resources = source.config?.resources as Record<string, ProjectResource[]> | undefined
       const categoryItems = resources?.[category] ?? []
       const removed = categoryItems.filter((item) => (item.path ?? item.name).startsWith(`${path}/`))
@@ -276,30 +309,33 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
 
   const generateMaterial = async (category: ResourceCategory) => {
     if (source === null) return
+    const requiredIndexes: ProjectIndexType[] = category === 'documentation' ? ['code'] : ['code', 'documentation']
+    const missingIndex = requiredIndexes.find((indexType) =>
+      indexingStatus?.indexes.find((index) => index.index_type === indexType)?.status !== 'completed',
+    )
+    if (missingIndex !== undefined) {
+      setGenerationNotice(t(missingIndex === 'code' ? 'project.indexCodeBeforeGeneration' : 'project.indexDocsBeforeGeneration'))
+      setGenerationNoticeCategory(category)
+      return
+    }
     setGenerationNotice(null)
+    setGenerationNoticeCategory(null)
+    setGeneratingCategory(category)
     try {
-      const draft = await materialGeneratorRegistry.generate({
-        projectId: source.id,
-        category,
-        source: category === 'documentation' ? 'code' : 'documentation',
-      })
-      let firstGenerated: { resource: ProjectResource; content: string } | null = null
-      for (const file of draft.files) {
-        const path = file.path ?? file.name
-        const parentPath = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
-        const filename = path.split('/').at(-1) ?? file.name
-        const resource = await addResource(category, new File([file.content], filename, { type: 'text/markdown' }), 'generated', parentPath)
-        if (firstGenerated === null && resource !== undefined) firstGenerated = { resource, content: file.content }
-      }
-      if (firstGenerated?.resource.id !== undefined) {
-        setActiveMarkdown({ category, resource: firstGenerated.resource, content: firstGenerated.content })
+      const result = await api.generateProjectMaterials(source.id, category)
+      const updated = await api.getSource(source.id)
+      setSource(updated)
+      await refreshIndexingStatus()
+      onNameChange?.(updated.name)
+      const firstGenerated = result.resources[0]
+      if (firstGenerated?.id !== undefined) {
+        const { content } = await api.getResourceContent(source.id, category, firstGenerated.id)
+        setActiveMarkdown({ category, resource: firstGenerated, content })
       }
     } catch (generationError) {
-      if (generationError instanceof MaterialGeneratorUnavailableError) {
-        setGenerationNotice(t('materials.generationUnavailable'))
-      } else {
-        setError(getErrorMessage(generationError))
-      }
+      setError(getErrorMessage(generationError))
+    } finally {
+      setGeneratingCategory(null)
     }
   }
 
@@ -315,7 +351,21 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
   const resources = source?.config?.resources as Record<string, ProjectResource[]> | undefined
   const documentation = resources?.documentation ?? []
   const userFlows = resources?.user_flow ?? []
-  const canIndex = documentation.length > 0 || userFlows.length > 0
+  const canStartIndex = (indexType: ProjectIndexType) => {
+    if (indexType === 'code') return importStatus?.status === 'done'
+    if (indexType === 'documentation') return documentation.length > 0
+    return userFlows.length > 0
+  }
+  const startIndexing = async (indexType: ProjectIndexType) => {
+    setIndexNotice(null)
+    try {
+      await api.startProjectIndexing(sourceId, indexType)
+      await refreshIndexingStatus()
+      setIndexNotice(t('project.indexQueuedMessage'))
+    } catch (requestError) {
+      setError(getErrorMessage(requestError))
+    }
+  }
 
   if (source === null) {
     return <div className="project-loading"><button type="button" className="text-button" onClick={onBack}>← {t('project.back')}</button><p>{error ?? t('project.loading')}</p></div>
@@ -326,11 +376,12 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
       <div className="project-heading">
         <div>
           <span className="eyebrow">{t('app.workspace')}</span>
-          <div className="project-title-row"><h1>{source.name}</h1><span className="badge">{source.type}</span></div>
+          <div className="project-title-row"><h1>{source.name}</h1><span className="badge">{source.type}</span><span className={`project-readiness ${indexingStatus?.ready ? 'ready' : 'pending'}`}><span className="readiness-dot" />{t(indexingStatus?.ready ? 'project.ready' : 'project.notReady')}</span></div>
           <p>{t('project.subtitle')}</p>
+          {!indexingStatus?.ready && <small className="project-readiness-hint">{t('project.finishIndexingBeforeIssues')}</small>}
         </div>
         <div className="project-heading-actions">
-          <button type="button" className="btn btn-primary btn-large" onClick={onOpenIssues}>{t('project.goToIssues')}</button>
+          <button type="button" className="btn btn-primary btn-large" disabled={!indexingStatus?.ready} title={!indexingStatus?.ready ? t('project.finishIndexingBeforeIssues') : undefined} onClick={onOpenIssues}>{t('project.goToIssues')}</button>
           {githubUrl !== null && <a className="btn" href={githubUrl} target="_blank" rel="noreferrer">{t('project.openGithub')} ↗</a>}
         </div>
       </div>
@@ -347,14 +398,16 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
 
       <div className="project-grid">
         <ImportCard t={t} status={importStatus} onRetry={() => void startImport()} />
-        <IndexingCard t={t} canIndex={canIndex} notice={indexNotice} onIndex={() => setIndexNotice(t('project.indexSoon'))} models={embeddingModels} selectedModelId={modelSelections.indexing} onModelChange={(modelId) => void changeModelSelection('indexing', modelId)} />
-        <StatsCard t={t} stats={stats} />
+        <IndexingCard t={t} indexes={indexingStatus?.indexes ?? []} canStart={canStartIndex} notice={indexNotice} onIndex={(indexType) => void startIndexing(indexType)} models={embeddingModels} selectedModelId={modelSelections.indexing} onModelChange={(modelId) => void changeModelSelection('indexing', modelId)} />
+        <StatsCard t={t} stats={stats} indexes={indexingStatus?.indexes ?? []} documentationCount={documentation.length} userFlowCount={userFlows.length} />
         <ResourcesCard
           t={t}
           documentation={documentation}
           userFlows={userFlows}
           uploading={uploading}
+          generatingCategory={generatingCategory}
           generationNotice={generationNotice}
+          generationNoticeCategory={generationNoticeCategory}
           confluenceNotice={confluenceNotice}
           onAddConfluence={() => setConfluenceNotice(t('materials.confluenceStub'))}
           generationModels={chatModels}
@@ -378,6 +431,13 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
           candidates={[...documentation.map((resource) => ({ category: 'documentation' as const, resource })), ...userFlows.map((resource) => ({ category: 'user_flow' as const, resource }))].filter((reference) => reference.resource.type === 'markdown' && reference.resource.id !== activeMarkdown.resource.id)}
           onRead={readMarkdown}
           onSave={(content) => api.updateResourceContent(source.id, activeMarkdown.category, activeMarkdown.resource.id!, content)}
+          onApprove={activeMarkdown.category === 'user_flow' && activeMarkdown.resource.name.toLowerCase().endsWith('.json')
+            ? async () => {
+                const result = await api.approveUserFlow(source.id, activeMarkdown.resource.id!)
+                await refreshIndexingStatus()
+                return result.content
+              }
+            : undefined}
           onClose={() => setActiveMarkdown(null)}
         />
       )}

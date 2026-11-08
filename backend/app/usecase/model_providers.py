@@ -162,6 +162,10 @@ class ModelProviderUsecase:
                 raise ModelProviderValidationError(
                     f"selected model does not support {expected_capability}"
                 )
+            if role == "indexing" and model.provider_type == "openrouter":
+                raise ModelProviderValidationError(
+                    "Indexing source code and project files requires a local embedding provider"
+                )
             if model.status not in {"available", "installed"}:
                 raise ModelProviderValidationError("selected model is not ready")
         await self._models.set_project_selection(source_id, role, model_id)

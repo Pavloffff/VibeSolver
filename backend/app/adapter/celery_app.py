@@ -2,7 +2,7 @@ from celery import Celery
 
 from app.adapter.config import get_settings
 
-TASK_INCLUDE = ["app.adapter.celery_tasks"]
+TASK_INCLUDE = ["app.adapter.celery_tasks", "app.adapter.indexing_tasks"]
 
 
 def create_celery_app() -> Celery:

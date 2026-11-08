@@ -53,6 +53,27 @@ export interface ImportStatus {
   error: string | null
 }
 
+export type ProjectIndexType = 'code' | 'documentation' | 'user_flow'
+export type ProjectIndexState = 'not_started' | 'queued' | 'running' | 'completed' | 'failed' | 'stale'
+
+export interface ProjectIndexRun {
+  index_type: ProjectIndexType
+  status: ProjectIndexState
+  progress: number
+  run_id: number | null
+  snapshot_id: number | null
+  files_total: number
+  chunks_total: number
+  error: string | null
+  updated_at: string | null
+}
+
+export interface ProjectIndexStatus {
+  ready: boolean
+  import_status: string
+  indexes: ProjectIndexRun[]
+}
+
 export interface ModelProviderType {
   provider_type: string
   display_name: string

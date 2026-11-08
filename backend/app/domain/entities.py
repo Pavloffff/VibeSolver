@@ -50,6 +50,16 @@ class RawItem:
 
 
 @dataclass(slots=True)
+class StoredSnapshotFile:
+    path: str
+    branch: str
+    storage_key: str
+    content_hash: str
+    size_bytes: int
+    metadata: dict[str, Any]
+
+
+@dataclass(slots=True)
 class ImportSnapshot:
     status: str
     progress: int

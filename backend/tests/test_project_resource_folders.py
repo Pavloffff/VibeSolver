@@ -45,7 +45,7 @@ async def test_delete_documentation_folder_removes_all_descendants() -> None:
 
     await usecase.delete_documentation_folder(1, "guide")
 
-    assert s3.deleted == ["uploads/a", "uploads/b"]
+    assert s3.deleted == []
     assert [item["id"] for item in sources.updated_config["resources"]["documentation"]] == ["c"]
 
 

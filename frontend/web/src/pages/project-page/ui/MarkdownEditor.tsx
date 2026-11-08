@@ -5,6 +5,16 @@ import type { TranslationKey } from '../../../shared/i18n'
 type Translate = (key: TranslationKey) => string
 type ResourceCategory = 'documentation' | 'user_flow'
 
+function hasApprovedFlows(content: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(content)
+    const flows: unknown[] = Array.isArray(parsed) ? parsed : [parsed]
+    return flows.length > 0 && flows.every((flow) => typeof flow === 'object' && flow !== null && 'approved' in flow && flow.approved === true)
+  } catch {
+    return false
+  }
+}
+
 export interface MarkdownResourceReference {
   category: ResourceCategory
   resource: ProjectResource
@@ -18,11 +28,13 @@ interface Props {
   candidates: MarkdownResourceReference[]
   onRead: (reference: MarkdownResourceReference) => Promise<string>
   onSave: (content: string) => Promise<void>
+  onApprove?: () => Promise<string>
   onClose: () => void
 }
 
-export default function MarkdownEditor({ t, resource, content: initialContent, isMarkdown, candidates, onRead, onSave, onClose }: Props) {
+export default function MarkdownEditor({ t, resource, content: initialContent, isMarkdown, candidates, onRead, onSave, onApprove, onClose }: Props) {
   const [content, setContent] = useState(initialContent)
+  const [flowApproved, setFlowApproved] = useState(() => hasApprovedFlows(initialContent))
   const [mode, setMode] = useState<'preview' | 'edit'>('preview')
   const [mergeId, setMergeId] = useState('')
   const [busy, setBusy] = useState(false)
@@ -61,6 +73,21 @@ export default function MarkdownEditor({ t, resource, content: initialContent, i
     }
   }
 
+  const approve = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const approvedContent = await onApprove?.() ?? content
+      setContent(approvedContent)
+      setFlowApproved(hasApprovedFlows(approvedContent))
+      setMode('preview')
+    } catch (approveError) {
+      setError(approveError instanceof Error ? approveError.message : String(approveError))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="modal-overlay">
       <section className="modal markdown-editor" role="dialog" aria-modal="true" aria-labelledby="markdown-editor-title">
@@ -86,6 +113,7 @@ export default function MarkdownEditor({ t, resource, content: initialContent, i
         {error !== null && <p className="error" role="alert">{error}</p>}
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>{t('common.cancel')}</button>
+          {onApprove !== undefined && !flowApproved && <button type="button" className="btn" onClick={() => void approve()} disabled={busy}>{t('project.approveUserFlow')}</button>}
           <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={busy}>{busy ? t('project.uploading') : t('materials.save')}</button>
         </div>
       </section>

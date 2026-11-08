@@ -107,7 +107,7 @@ When adding a new source connector, a new agent, or a new metric — write tests
 - Sandbox: agents never execute generated code directly; only the Sandbox Executor runs it (`docker --network none`).
 
 ### Data / privacy
-- Personal data and product code stay local (local LLMs). Cloud LLMs receive only de-identified text — see data-flow rules in spec `data-handling`.
+- Personal data and project code stay local by default. For generation, project excerpts may be sent to a cloud LLM only when the user explicitly selects that provider; send only retrieved excerpts, never provider credentials or project configuration, and disclose this in the UI.
 - Never log secrets, tokens, or raw user PII. Env vars via `.env` (never committed).
 
 ## Git Conventions

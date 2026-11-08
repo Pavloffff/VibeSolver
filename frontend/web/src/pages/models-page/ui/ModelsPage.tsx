@@ -206,6 +206,21 @@ export default function ModelsPage() {
   const cancelPull = () => abortController.current?.abort()
   const providerType = form === null ? undefined : providerTypes.find((item) => item.provider_type === form.providerType)
   const visibleAvailableModels = availableModels.filter((item) => `${item.display_name} ${item.provider_model_id}`.toLowerCase().includes(search.toLowerCase()))
+  const chatModels = models.filter((model) => model.capabilities.includes('chat'))
+  const embeddingModels = models.filter((model) => model.capabilities.includes('embedding'))
+  const otherModels = models.filter((model) => !model.capabilities.includes('chat') && !model.capabilities.includes('embedding'))
+  const renderModelRows = (entries: WorkspaceModel[]) => (
+    <div className="workspace-model-list">
+      {entries.map((model) => (
+        <div className="workspace-model-row" key={model.id}>
+          <div className="workspace-model-icon">{model.capabilities.includes('embedding') ? 'EMB' : 'AI'}</div>
+          <div className="workspace-model-info"><strong>{model.display_name}</strong><span>{model.provider_name} · {model.provider_model_id}</span><div className="workspace-model-badges">{model.capabilities.map((capability) => <span className="badge" key={capability}>{capability === 'embedding' ? t('models.capabilityEmbedding') : capability === 'chat' ? t('models.capabilityChat') : capability}</span>)}<span className="badge">{t(model.status === 'installed' ? 'models.statusInstalled' : model.status === 'available' ? 'models.statusRemote' : model.status === 'pulling' ? 'models.statusPulling' : model.status === 'error' ? 'models.statusError' : 'models.statusCancelled')}</span></div></div>
+          {typeof model.metadata.size_bytes === 'number' && <span className="model-size">{formatBytes(model.metadata.size_bytes)}</span>}
+          <button type="button" className="btn models-delete-button" disabled={busy !== null} onClick={() => deleteModel(model)}>{t('sources.delete')}</button>
+        </div>
+      ))}
+    </div>
+  )
 
   if (loading) return <div className="models-page"><p>{t('models.loading')}</p></div>
 
@@ -250,20 +265,16 @@ export default function ModelsPage() {
       </section>
 
       <section className="models-section">
-        <div className="models-section-heading"><div><h2>{t('models.catalog')}</h2><p>{t('models.catalogHint')}</p></div></div>
-        {models.length === 0 ? <div className="models-empty">{t('models.noModels')}</div> : (
-          <div className="workspace-model-list">
-            {models.map((model) => (
-              <div className="workspace-model-row" key={model.id}>
-                <div className="workspace-model-icon">{model.capabilities.includes('embedding') ? 'EMB' : 'AI'}</div>
-                <div className="workspace-model-info"><strong>{model.display_name}</strong><span>{model.provider_name} · {model.provider_model_id}</span><div className="workspace-model-badges">{model.capabilities.map((capability) => <span className="badge" key={capability}>{t(capability === 'embedding' ? 'models.capabilityEmbedding' : 'models.capabilityChat')}</span>)}<span className="badge">{t(model.status === 'installed' ? 'models.statusInstalled' : model.status === 'available' ? 'models.statusRemote' : model.status === 'pulling' ? 'models.statusPulling' : model.status === 'error' ? 'models.statusError' : 'models.statusCancelled')}</span></div></div>
-                {typeof model.metadata.size_bytes === 'number' && <span className="model-size">{formatBytes(model.metadata.size_bytes)}</span>}
-                <button type="button" className="btn models-delete-button" disabled={busy !== null} onClick={() => deleteModel(model)}>{t('sources.delete')}</button>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="models-section-heading"><div><h2>{t('models.chatModels')}</h2><p>{t('models.chatModelsHint')}</p></div></div>
+        {chatModels.length > 0 ? renderModelRows(chatModels) : <div className="models-empty">{t('models.noChatModels')}</div>}
       </section>
+
+      <section className="models-section">
+        <div className="models-section-heading"><div><h2>{t('models.embeddingModels')}</h2><p>{t('models.embeddingModelsHint')}</p></div></div>
+        {embeddingModels.length > 0 ? renderModelRows(embeddingModels) : <div className="models-empty">{t('models.noEmbeddingModels')}</div>}
+      </section>
+
+      {otherModels.length > 0 && <section className="models-section"><div className="models-section-heading"><div><h2>{t('models.otherModels')}</h2><p>{t('models.otherModelsHint')}</p></div></div>{renderModelRows(otherModels)}</section>}
 
       {form !== null && (
         <div className="modal-overlay">

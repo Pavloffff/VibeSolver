@@ -8,7 +8,7 @@ from app.adapter.celery_app import celery_app
 from app.adapter.config import Settings, get_settings
 from app.adapter.connectors import ConnectorCatalogImpl
 from app.adapter.db import to_sync_dsn
-from app.adapter.repositories import ImportFileSqlRepository
+from app.adapter.repositories import ImportFileSqlRepository, SourceSnapshotSqlRepository
 from app.adapter.s3 import make_s3_client
 from app.domain.entities import SourceNotFoundError
 from app.domain.models import Import, ImportState, Source
@@ -47,6 +47,7 @@ def _stage_wiring_kwargs(
     if stage_cls is PersistItems:
         return {
             "repository": ImportFileSqlRepository(session),
+            "snapshot_repository": SourceSnapshotSqlRepository(session),
             "s3": make_s3_client(settings),
             "bucket": settings.s3_bucket_raw,
         }
@@ -85,6 +86,7 @@ def _run_source_import(source_id: int) -> None:
                 source_id=source_id,
                 source_type=source.type,
                 source_config=source.config,
+                import_id=import_row.id,
             )
             run_stages(ctx, _build_stages(session, settings), on_stage_done=update_progress)
         except Exception as exc:

@@ -1,5 +1,6 @@
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from math import isfinite
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -54,6 +55,158 @@ def _request_json(
 def _model_rows(response: Mapping[str, Any]) -> list[dict[str, Any]]:
     rows = response.get("data", response.get("models", []))
     return [item for item in rows if isinstance(item, dict)] if isinstance(rows, list) else []
+
+
+def embed_texts(
+    provider_type: str,
+    base_url: str,
+    model_id: str,
+    texts: list[str],
+    timeout: int,
+    api_key: str | None = None,
+) -> list[list[float]]:
+    if not texts:
+        return []
+    if provider_type == "ollama":
+        response = _request_json(
+            f"{base_url.rstrip('/')}/api/embed",
+            timeout,
+            payload={"model": model_id, "input": texts},
+        )
+        values = response.get("embeddings")
+        if not isinstance(values, list):
+            raise ProviderUnavailableError("Ollama returned an invalid embedding response")
+        embeddings = [_validated_embedding(value) for value in values]
+    elif provider_type == "freetoken":
+        response = _request_json(
+            f"{base_url.rstrip('/')}/embeddings",
+            timeout,
+            api_key,
+            {"model": model_id, "input": texts},
+        )
+        rows = _model_rows(response)
+        rows.sort(
+            key=lambda row: row.get("index", 0) if isinstance(row.get("index", 0), int) else 0
+        )
+        embeddings = [_validated_embedding(row.get("embedding")) for row in rows]
+    else:
+        raise ProviderUnavailableError(
+            "Indexing source code and project files requires an approved local embedding provider"
+        )
+    if len(embeddings) != len(texts):
+        raise ProviderUnavailableError(
+            "Provider returned a different number of embeddings than inputs"
+        )
+    dimensions = {len(embedding) for embedding in embeddings}
+    if len(dimensions) != 1:
+        raise ProviderUnavailableError("Provider returned embeddings with inconsistent dimensions")
+    return embeddings
+
+
+ChatCompletionAdapter = Callable[[str, str, list[dict[str, str]], int, str | None, int], str]
+CHAT_COMPLETION_ADAPTERS: dict[str, ChatCompletionAdapter] = {}
+
+
+def register_chat_completion_adapter(provider_type: str, adapter: ChatCompletionAdapter) -> None:
+    normalized_type = provider_type.strip()
+    if not normalized_type:
+        raise ValueError("provider type must not be empty")
+    CHAT_COMPLETION_ADAPTERS[normalized_type] = adapter
+
+
+def complete_json(
+    provider_type: str,
+    base_url: str,
+    model_id: str,
+    system_prompt: str,
+    user_prompt: str,
+    timeout: int,
+    api_key: str | None = None,
+    max_output_tokens: int = 8192,
+) -> str:
+    adapter = CHAT_COMPLETION_ADAPTERS.get(provider_type)
+    if adapter is None:
+        raise ProviderUnavailableError("This model provider does not support text generation")
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    return adapter(base_url, model_id, messages, timeout, api_key, max_output_tokens)
+
+
+def _ollama_chat_completion(
+    base_url: str,
+    model_id: str,
+    messages: list[dict[str, str]],
+    timeout: int,
+    api_key: str | None,
+    max_output_tokens: int,
+) -> str:
+    response = _request_json(
+        f"{base_url.rstrip('/')}/api/chat",
+        timeout,
+        payload={
+            "model": model_id,
+            "messages": messages,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0, "num_predict": max_output_tokens},
+        },
+    )
+    message = response.get("message")
+    return _chat_content(message)
+
+
+def _openai_compatible_chat_completion(
+    base_url: str,
+    model_id: str,
+    messages: list[dict[str, str]],
+    timeout: int,
+    api_key: str | None,
+    max_output_tokens: int,
+) -> str:
+    payload = {
+        "model": model_id,
+        "messages": messages,
+        "temperature": 0,
+        "max_tokens": max_output_tokens,
+        "response_format": {"type": "json_object"},
+    }
+    try:
+        response = _request_json(
+            f"{base_url.rstrip('/')}/chat/completions", timeout, api_key, payload
+        )
+    except ProviderUnavailableError as exc:
+        if "HTTP 400" not in str(exc):
+            raise
+        payload.pop("response_format")
+        response = _request_json(
+            f"{base_url.rstrip('/')}/chat/completions", timeout, api_key, payload
+        )
+    choices = response.get("choices")
+    first = choices[0] if isinstance(choices, list) and choices else None
+    message = first.get("message") if isinstance(first, dict) else None
+    return _chat_content(message)
+
+
+def _chat_content(message: Any) -> str:
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, str) or not content.strip():
+        raise ProviderUnavailableError("The model returned an empty generation response")
+    return content.strip()
+
+
+register_chat_completion_adapter("ollama", _ollama_chat_completion)
+register_chat_completion_adapter("freetoken", _openai_compatible_chat_completion)
+register_chat_completion_adapter("openrouter", _openai_compatible_chat_completion)
+
+
+def _validated_embedding(value: Any) -> list[float]:
+    if not isinstance(value, list) or not value:
+        raise ProviderUnavailableError("Provider returned an invalid embedding vector")
+    if any(not isinstance(item, (int, float)) or not isfinite(float(item)) for item in value):
+        raise ProviderUnavailableError("Provider returned an invalid embedding vector")
+    return [float(item) for item in value]
 
 
 class FreeTokenAdapter:
@@ -225,6 +378,23 @@ def _ollama_capabilities(response: dict[str, Any]) -> list[str]:
         capabilities.append("chat")
     if "embedding" in values:
         capabilities.append("embedding")
+    if "capabilities" not in response:
+        model_info = response.get("model_info")
+        if isinstance(model_info, dict) and isinstance(model_info.get("general.architecture"), str):
+            tags = model_info.get("general.tags", [])
+            normalized_tags = (
+                {tag.lower() for tag in tags if isinstance(tag, str)}
+                if isinstance(tags, list)
+                else set()
+            )
+            embedding_tags = {
+                "feature-extraction",
+                "sentence-similarity",
+                "text-embedding",
+            }
+            capabilities.append(
+                "embedding" if normalized_tags.intersection(embedding_tags) else "chat"
+            )
     return capabilities
 
 

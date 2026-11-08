@@ -206,11 +206,11 @@ def test_fake_s3_satisfies_s3_protocol() -> None:
         client.head_object(Bucket="raw", Key="missing")
 
 
-def test_git_reference_persists_single_manifest_object() -> None:
+def test_git_reference_persists_manifest_and_file_objects() -> None:
     s3 = FakeS3()
     persisted = GitReferenceStorage().persist(source_id=7, items=git_items(), s3=s3, bucket="raw")
-    assert len(s3.put_keys) == 1
-    bucket, key = s3.put_keys[0]
+    assert len(s3.put_keys) == 3
+    bucket, key = next((bucket, key) for bucket, key in s3.put_keys if key.startswith("manifests/"))
     assert bucket == "raw"
     assert key.startswith("manifests/source-7/")
     assert key.endswith(".json")
@@ -226,10 +226,10 @@ def test_git_reference_persists_single_manifest_object() -> None:
     by_path = index_by_path(persisted)
     assert set(by_path) == {"a.txt", "src/b.py"}
     assert by_path["a.txt"].branch == "main"
-    assert by_path["a.txt"].storage_key == key
+    assert by_path["a.txt"].storage_key == f"files/source-7/{sha256_hex(b'alpha\n')}.bin"
     assert by_path["a.txt"].size_bytes == 6
-    assert by_path["a.txt"].content_hash == BLOB_A
-    assert by_path["src/b.py"].content_hash == BLOB_B
+    assert by_path["a.txt"].content_hash == sha256_hex(b"alpha\n")
+    assert by_path["src/b.py"].content_hash == sha256_hex(b"print(1)\n")
 
 
 def test_git_reference_reimport_skips_unchanged_manifest() -> None:
@@ -237,7 +237,7 @@ def test_git_reference_reimport_skips_unchanged_manifest() -> None:
     items = git_items()
     first = GitReferenceStorage().persist(source_id=7, items=items, s3=s3, bucket="raw")
     second = GitReferenceStorage().persist(source_id=7, items=items, s3=s3, bucket="raw")
-    assert len(s3.put_keys) == 1
+    assert len(s3.put_keys) == 3
     assert [file.storage_key for file in second] == [file.storage_key for file in first]
 
 
@@ -297,14 +297,14 @@ def test_storage_strategy_registry_contains_strategies() -> None:
 
 
 def test_default_storage_strategy_mapping() -> None:
-    assert DEFAULT_STORAGE_STRATEGY["git"] == "git_reference"
+    assert DEFAULT_STORAGE_STRATEGY["git"] == "full_copy"
     assert DEFAULT_STORAGE_STRATEGY["archive"] == "full_copy"
     for strategy_key in DEFAULT_STORAGE_STRATEGY.values():
         assert strategy_key in STORAGE_STRATEGY_REGISTRY
 
 
 def test_resolve_storage_strategy_uses_defaults() -> None:
-    assert isinstance(resolve_storage_strategy("git", {}), GitReferenceStorage)
+    assert isinstance(resolve_storage_strategy("git", {}), FullCopyStorage)
     assert isinstance(resolve_storage_strategy("archive", {}), FullCopyStorage)
 
 

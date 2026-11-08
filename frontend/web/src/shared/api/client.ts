@@ -5,6 +5,8 @@ import type {
   AvailableModel,
   ConnectorInfo,
   ImportStatus,
+  ProjectIndexStatus,
+  ProjectIndexType,
   ModelProvider,
   ModelProviderType,
   OllamaPullProgress,
@@ -148,6 +150,13 @@ export class ApiClient {
     )
   }
 
+  approveUserFlow(sourceId: number, resourceId: string): Promise<{ content: string }> {
+    return this.request<{ content: string }>(
+      `/api/v1/sources/${sourceId}/resources/user_flow/${encodeURIComponent(resourceId)}/approve`,
+      { method: 'POST' },
+    )
+  }
+
   deleteResource(sourceId: number, category: string, resourceId: string): Promise<void> {
     return this.request<void>(
       `/api/v1/sources/${sourceId}/resources/${encodeURIComponent(category)}/${encodeURIComponent(resourceId)}`,
@@ -169,6 +178,21 @@ export class ApiClient {
 
   getImportStatus(id: number): Promise<ImportStatus> {
     return this.request<ImportStatus>(`/api/v1/sources/${id}/import`)
+  }
+
+  getProjectIndexStatus(id: number): Promise<ProjectIndexStatus> {
+    return this.request<ProjectIndexStatus>(`/api/v1/sources/${id}/indexes`)
+  }
+
+  startProjectIndexing(id: number, indexType: ProjectIndexType): Promise<{ run_id: number; task_id: string; status: string }> {
+    return this.request(`/api/v1/sources/${id}/indexes/${indexType}`, { method: 'POST' })
+  }
+
+  generateProjectMaterials(id: number, category: 'documentation' | 'user_flow', instructions?: string): Promise<{ resources: ProjectResource[] }> {
+    return this.request(`/api/v1/sources/${id}/materials/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ category, ...(instructions === undefined ? {} : { instructions }) }),
+    })
   }
 
   listModelProviderTypes(): Promise<ModelProviderType[]> {

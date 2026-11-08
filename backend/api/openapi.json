@@ -236,6 +236,157 @@
         }
       }
     },
+    "/api/v1/sources/{source_id}/indexes": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Get Index Status",
+        "operationId": "get_index_status_api_v1_sources__source_id__indexes_get",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectIndexStatusOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{source_id}/indexes/{index_type}": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Enqueue Indexing",
+        "operationId": "enqueue_indexing_api_v1_sources__source_id__indexes__index_type__post",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "index_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Index Type"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexEnqueueOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{source_id}/materials/generate": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Generate Project Materials",
+        "operationId": "generate_project_materials_api_v1_sources__source_id__materials_generate_post",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaterialGenerationIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialGenerationOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Required indexes or model configuration are not ready"
+          },
+          "502": {
+            "description": "The selected model failed to return a valid response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/sources/{source_id}/documentation/import": {
       "post": {
         "tags": [
@@ -606,6 +757,57 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{source_id}/resources/user_flow/{resource_id}/approve": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Approve User Flow Resource",
+        "operationId": "approve_user_flow_resource_api_v1_sources__source_id__resources_user_flow__resource_id__approve_post",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Resource Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceContentOut"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -1786,6 +1988,110 @@
         ],
         "title": "ImportStatusOut"
       },
+      "IndexEnqueueOut": {
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "Run Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "task_id",
+          "status"
+        ],
+        "title": "IndexEnqueueOut"
+      },
+      "IndexRunOut": {
+        "properties": {
+          "index_type": {
+            "type": "string",
+            "title": "Index Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "progress": {
+            "type": "integer",
+            "title": "Progress"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          },
+          "files_total": {
+            "type": "integer",
+            "title": "Files Total"
+          },
+          "chunks_total": {
+            "type": "integer",
+            "title": "Chunks Total"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index_type",
+          "status",
+          "progress",
+          "run_id",
+          "snapshot_id",
+          "files_total",
+          "chunks_total",
+          "error",
+          "updated_at"
+        ],
+        "title": "IndexRunOut"
+      },
       "LastImportOut": {
         "properties": {
           "status": {
@@ -1810,6 +2116,50 @@
           "finished_at"
         ],
         "title": "LastImportOut"
+      },
+      "MaterialGenerationIn": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Category"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category"
+        ],
+        "title": "MaterialGenerationIn"
+      },
+      "MaterialGenerationOut": {
+        "properties": {
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectResource"
+            },
+            "type": "array",
+            "title": "Resources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resources"
+        ],
+        "title": "MaterialGenerationOut"
       },
       "ModelOut": {
         "properties": {
@@ -2096,6 +2446,32 @@
         ],
         "title": "OllamaPullIn"
       },
+      "ProjectIndexStatusOut": {
+        "properties": {
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "import_status": {
+            "type": "string",
+            "title": "Import Status"
+          },
+          "indexes": {
+            "items": {
+              "$ref": "#/components/schemas/IndexRunOut"
+            },
+            "type": "array",
+            "title": "Indexes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ready",
+          "import_status",
+          "indexes"
+        ],
+        "title": "ProjectIndexStatusOut"
+      },
       "ProjectResource": {
         "properties": {
           "id": {
@@ -2116,6 +2492,17 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
           },
           "config": {
             "additionalProperties": true,

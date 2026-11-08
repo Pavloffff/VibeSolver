@@ -262,7 +262,6 @@ def _available_model_out(model: ProviderModel) -> ProviderAvailableModelOut:
         display_name=model.display_name,
         capabilities=model.capabilities,
         status=model.status,
-        progress=model.progress,
         metadata=model.metadata,
     )
 

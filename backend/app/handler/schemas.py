@@ -25,7 +25,19 @@ class ProjectResource(BaseModel):
     id: str | None = None
     type: str
     name: str
+    path: str | None = None
     config: dict[str, Any]
+
+
+class MaterialGenerationIn(BaseModel):
+    model_config = {"extra": "forbid", "strict": True}
+
+    category: str = Field(min_length=1, max_length=80)
+    instructions: str | None = Field(default=None, max_length=4000)
+
+
+class MaterialGenerationOut(BaseModel):
+    resources: list[ProjectResource]
 
 
 class SourceUpdate(BaseModel):
@@ -145,6 +157,30 @@ class ModelSelectionOut(BaseModel):
     documentation_generation: int | None
 
 
+class IndexRunOut(BaseModel):
+    index_type: str
+    status: str
+    progress: int
+    run_id: int | None
+    snapshot_id: int | None
+    files_total: int
+    chunks_total: int
+    error: str | None
+    updated_at: str | None
+
+
+class ProjectIndexStatusOut(BaseModel):
+    ready: bool
+    import_status: str
+    indexes: list[IndexRunOut]
+
+
+class IndexEnqueueOut(BaseModel):
+    run_id: int
+    task_id: str
+    status: str
+
+
 class OllamaPullIn(BaseModel):
     model_id: str
 
@@ -155,11 +191,7 @@ def sanitize_config(config: dict[str, Any]) -> dict[str, Any]:
 
 def _sanitize_value(value: Any) -> Any:
     if isinstance(value, dict):
-        return {
-            key: _sanitize_value(nested)
-            for key, nested in value.items()
-            if key != "token_ref"
-        }
+        return {key: _sanitize_value(nested) for key, nested in value.items() if key != "token_ref"}
     if isinstance(value, list):
         return [_sanitize_value(item) for item in value]
     return value

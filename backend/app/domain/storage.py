@@ -16,6 +16,7 @@ class PersistedFile:
     storage_key: str
     size_bytes: int
     content_hash: str
+    metadata: dict[str, Any]
 
 
 class S3Like(Protocol):
@@ -59,6 +60,7 @@ class GitReferenceStorage:
                 "branch": str(item.meta.get("branch", "")),
                 "blob_sha": str(item.meta.get("blob_sha", "")),
                 "size": len(item.content),
+                "content_hash": hashlib.sha256(item.content).hexdigest(),
             }
             for item in items
         ]
@@ -69,21 +71,13 @@ class GitReferenceStorage:
             "commits": commits,
             "files": files,
         }
+        persisted_files = FullCopyStorage().persist(source_id, items, s3, bucket)
         manifest_body = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
         snapshot_id = hashlib.sha256(manifest_body).hexdigest()
         key = f"manifests/source-{source_id}/{snapshot_id}.json"
         if not _object_exists(s3, bucket, key):
             s3.put_object(Bucket=bucket, Key=key, Body=manifest_body)
-        return [
-            PersistedFile(
-                path=item.path,
-                branch=str(item.meta.get("branch", "")),
-                storage_key=key,
-                size_bytes=len(item.content),
-                content_hash=str(item.meta.get("blob_sha", "")),
-            )
-            for item in items
-        ]
+        return persisted_files
 
 
 class FullCopyStorage:
@@ -104,6 +98,7 @@ class FullCopyStorage:
                     storage_key=key,
                     size_bytes=len(item.content),
                     content_hash=content_hash,
+                    metadata=dict(item.meta),
                 )
             )
         return persisted_files
@@ -115,7 +110,7 @@ STORAGE_STRATEGY_REGISTRY: dict[str, type[StorageStrategy]] = {
 }
 
 DEFAULT_STORAGE_STRATEGY: dict[str, str] = {
-    "git": "git_reference",
+    "git": "full_copy",
     "archive": "full_copy",
 }
 
