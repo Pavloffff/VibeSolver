@@ -16,6 +16,7 @@ x-backend: &backend
     VIBESOLVER_FREETOKEN_API_URL: ${VIBESOLVER_FREETOKEN_API_URL:-http://host.docker.internal:1920/v1}
     VIBESOLVER_OLLAMA_API_URL: ${VIBESOLVER_OLLAMA_API_URL:-http://host.docker.internal:11434}
     VIBESOLVER_OPENROUTER_API_URL: ${VIBESOLVER_OPENROUTER_API_URL:-https://openrouter.ai/api/v1}
+    VIBESOLVER_ZAI_API_URL: ${VIBESOLVER_ZAI_API_URL:-https://api.z.ai/api/paas/v4}
   depends_on:
     postgres:
       condition: service_healthy

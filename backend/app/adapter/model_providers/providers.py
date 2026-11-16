@@ -199,6 +199,7 @@ def _chat_content(message: Any) -> str:
 register_chat_completion_adapter("ollama", _ollama_chat_completion)
 register_chat_completion_adapter("freetoken", _openai_compatible_chat_completion)
 register_chat_completion_adapter("openrouter", _openai_compatible_chat_completion)
+register_chat_completion_adapter("zai", _openai_compatible_chat_completion)
 
 
 def _validated_embedding(value: Any) -> list[float]:
@@ -297,6 +298,37 @@ class OllamaAdapter:
             raise ProviderUnavailableError("Ollama returned an invalid pull response") from exc
 
 
+class ZaiAdapter:
+    def list_models(self, connection: ProviderCredentials, timeout: int) -> list[ProviderModel]:
+        if not connection.api_key:
+            raise ProviderUnavailableError("Z.ai API key is required")
+        response = _request_json(
+            f"{connection.base_url.rstrip('/')}/models", timeout, connection.api_key
+        )
+        models: list[ProviderModel] = []
+        for row in _model_rows(response):
+            model_id = row.get("id")
+            if not isinstance(model_id, str) or not model_id.lower().startswith("glm"):
+                continue
+            models.append(
+                ProviderModel(
+                    provider_model_id=model_id,
+                    display_name=str(row.get("name") or model_id),
+                    capabilities=["chat"],
+                    status="available",
+                    metadata={"source": "catalog"},
+                )
+            )
+        return models
+
+    def pull_model(
+        self, connection: ProviderCredentials, model_id: str, timeout: int
+    ) -> Iterator[dict[str, Any]]:
+        raise ProviderUnavailableError(
+            "Z.ai models are hosted remotely and cannot be downloaded"
+        )
+
+
 class OpenRouterAdapter:
     def list_models(self, connection: ProviderCredentials, timeout: int) -> list[ProviderModel]:
         if not connection.api_key:
@@ -344,6 +376,14 @@ class OpenRouterAdapter:
 def build_provider_registry(settings: Settings | None = None) -> dict[str, ModelProviderDefinition]:
     config = settings or get_settings()
     return {
+        "zai": ModelProviderDefinition(
+            adapter=ZaiAdapter(),
+            default_url=config.zai_api_url,
+            display_name="Z.ai",
+            requires_api_key=True,
+            fixed_url=True,
+            sync_all_models=False,
+        ),
         "freetoken": ModelProviderDefinition(
             adapter=FreeTokenAdapter(),
             default_url=config.freetoken_api_url,

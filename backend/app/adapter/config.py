@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     freetoken_api_url: str = "http://host.docker.internal:1920/v1"
     ollama_api_url: str = "http://host.docker.internal:11434"
     openrouter_api_url: str = "https://openrouter.ai/api/v1"
+    zai_api_url: str = "https://api.z.ai/api/paas/v4"
 
 
 @lru_cache

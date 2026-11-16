@@ -121,6 +121,7 @@ export const ru: Dict = {
   'models.apiKey': 'API-ключ',
   'models.keyPreserved': 'Оставьте поле пустым, чтобы сохранить текущий ключ',
   'models.freetokenHint': 'Адрес должен быть доступен из VibeSolver API. В Docker Desktop для сервера на этом компьютере укажите host.docker.internal.',
+  'models.zaiHint': 'Создайте ключ API в консоли Z.ai (z.ai) и вставьте его здесь. Адрес фиксированный — официальный API Z.ai; модели добавляются из каталога.',
   'models.addProviderTitle': 'Подключить провайдера',
   'models.editProviderTitle': 'Изменить подключение провайдера',
   'models.noCatalogResults': 'По этому запросу модели не найдены.',

@@ -119,6 +119,7 @@ export const en = {
   'models.apiKey': 'API key',
   'models.keyPreserved': 'Leave blank to keep the saved key',
   'models.freetokenHint': 'The address must be reachable from the VibeSolver API. In Docker Desktop, use host.docker.internal for a server running on this computer.',
+  'models.zaiHint': 'Create an API key in the Z.ai console (z.ai) and paste it here. The address is fixed to the official Z.ai API; models are added from the catalog.',
   'models.addProviderTitle': 'Connect a provider',
   'models.editProviderTitle': 'Edit provider connection',
   'models.noCatalogResults': 'No models match this search.',

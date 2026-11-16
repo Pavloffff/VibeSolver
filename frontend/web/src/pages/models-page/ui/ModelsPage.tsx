@@ -92,7 +92,8 @@ export default function ModelsPage() {
       if (editingProvider === null) createdProvider = await api.createModelProvider(payload)
       else await api.updateModelProvider(editingProvider.id, { name: form.name, base_url: form.baseUrl, ...(form.apiKey ? { api_key: form.apiKey } : {}) })
       await refresh()
-      if (createdProvider?.provider_type === 'openrouter') {
+      const createdDefinition = createdProvider !== null ? providerTypes.find((item) => item.provider_type === createdProvider.provider_type) : undefined
+      if (createdProvider !== null && createdDefinition !== undefined && !createdDefinition.sync_all_models) {
         setAvailableModels(await api.listAvailableModels(createdProvider.id))
         setSearch('')
         setBrowseProvider(createdProvider)
@@ -246,7 +247,7 @@ export default function ModelsPage() {
                 <div className="provider-actions">
                   <button type="button" className="btn" disabled={busy !== null} onClick={() => testProvider(provider)}>{busy === `provider-test-${provider.id}` ? t('models.checking') : t('models.testConnection')}</button>
                   {definition?.sync_all_models && <button type="button" className="btn" disabled={busy !== null} onClick={() => syncProvider(provider)}>{busy === `provider-sync-${provider.id}` ? t('models.syncing') : t('models.refreshModels')}</button>}
-                  {provider.provider_type === 'openrouter' && <button type="button" className="btn" disabled={busy !== null} onClick={() => void browseModels(provider)}>{t('models.browseCatalog')}</button>}
+                  {definition?.sync_all_models === false && <button type="button" className="btn" disabled={busy !== null} onClick={() => void browseModels(provider)}>{t('models.browseCatalog')}</button>}
                   {definition?.supports_model_pull && <button type="button" className="btn" disabled={busy !== null} onClick={() => beginPull(provider)}>{t('models.pullModel')}</button>}
                   <button type="button" className="btn" disabled={busy !== null} onClick={() => openEdit(provider)}>{t('sources.edit')}</button>
                   <button type="button" className="btn models-delete-button" disabled={busy !== null} onClick={() => deleteProvider(provider)}>{t('sources.delete')}</button>
@@ -287,6 +288,7 @@ export default function ModelsPage() {
             <label>{t('models.connectionName')}<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
             <label>{t('models.apiAddress')}<input required={!providerType?.fixed_url} readOnly={providerType?.fixed_url ?? false} value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} /></label>
             {providerType?.provider_type === 'freetoken' && <small className="models-form-hint">{t('models.freetokenHint')}</small>}
+            {providerType?.provider_type === 'zai' && <small className="models-form-hint">{t('models.zaiHint')}</small>}
             <label>{t('models.apiKey')}{providerType?.requires_api_key ? ' *' : ''}<input type="password" autoComplete="new-password" required={providerType?.requires_api_key === true && editingProvider === null} value={form.apiKey} placeholder={editingProvider !== null && editingProvider.has_api_key ? t('models.keyPreserved') : ''} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} /></label>
             {error !== null && <p className="error" role="alert">{error}</p>}
             <div className="modal-actions"><button type="button" className="btn" onClick={() => setForm(null)}>{t('common.cancel')}</button><button type="button" className="btn" disabled={busy !== null} onClick={() => void testProviderForm()}>{busy === 'provider-test' ? t('models.checking') : t('models.testConnection')}</button><button type="submit" className="btn btn-primary" disabled={busy !== null}>{busy === 'provider-save' ? t('project.uploading') : t('common.save')}</button></div>

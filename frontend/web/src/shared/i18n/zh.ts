@@ -121,6 +121,7 @@ export const zh: Dict = {
   'models.apiKey': 'API 密钥',
   'models.keyPreserved': '留空以保留已保存的密钥',
   'models.freetokenHint': '该地址必须能从 VibeSolver API 访问。Docker Desktop 中，连接本机服务器请使用 host.docker.internal。',
+  'models.zaiHint': '在 Z.ai 控制台（z.ai）创建 API 密钥并粘贴到此处。地址固定为 Z.ai 官方 API；模型从目录中添加。',
   'models.addProviderTitle': '连接提供商',
   'models.editProviderTitle': '编辑提供商连接',
   'models.noCatalogResults': '没有找到匹配的模型。',
