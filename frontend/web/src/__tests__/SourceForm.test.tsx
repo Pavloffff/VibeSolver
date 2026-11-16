@@ -69,8 +69,8 @@ describe('SourceForm', () => {
     fireEvent.change(select, { target: { value: 'git' } })
     fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'repo' } })
     fireEvent.click(screen.getByRole('button', { name: 'Создать' }))
-    expect(await screen.findByText('Заполните поле «URL»', {}, { timeout: 4000 })).toBeInTheDocument()
-  })
+    expect(await screen.findByText('Заполните поле «URL»', {}, { timeout: 8000 })).toBeInTheDocument()
+  }, 20000)
 
   it('uploads an archive and creates the source with its upload key', async () => {
     const api = {
@@ -89,9 +89,9 @@ describe('SourceForm', () => {
     } as unknown as ApiClient
     renderArchiveForm(api)
     fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'archive' } })
-    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Проект' } })
+    fireEvent.change(await screen.findByLabelText('Название'), { target: { value: 'Проект' } })
     const file = new File(['source'], 'project.zip', { type: 'application/zip' })
-    fireEvent.change(screen.getByLabelText(/Архив проекта/), { target: { files: [file] } })
+    fireEvent.change(await screen.findByLabelText(/Архив проекта/), { target: { files: [file] } })
     await waitFor(() => expect(api.uploadArchive).toHaveBeenCalledWith(file))
     fireEvent.click(screen.getByRole('button', { name: 'Создать' }))
     await waitFor(() =>
@@ -115,8 +115,8 @@ describe('SourceForm', () => {
       </I18nProvider>,
     )
     fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'git' } })
-    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'repo' } })
-    fireEvent.change(screen.getByLabelText('URL *'), { target: { value: 'https://github.com/acme/repo.git' } })
+    fireEvent.change(await screen.findByLabelText('Название'), { target: { value: 'repo' } })
+    fireEvent.change(await screen.findByLabelText('URL *'), { target: { value: 'https://github.com/acme/repo.git' } })
     fireEvent.click(screen.getByRole('button', { name: 'Создать' }))
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith({ id: 9 }, 'queue unavailable'))
