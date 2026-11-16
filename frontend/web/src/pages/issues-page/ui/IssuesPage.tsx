@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import { getApiClient, getErrorMessage } from '../../../shared/api/client'
 import type { ApiClient } from '../../../shared/api/client'
 import type { ProjectModelSelections, TicketBrief, TicketDetail, TicketStats, WorkspaceModel } from '../../../shared/api/types'
 import { useT } from '../../../shared/i18n'
 import type { TranslationKey } from '../../../shared/i18n'
+import { parseTicketText } from '../../../features/issues'
 
 interface Props {
   projectId: number
@@ -80,6 +82,33 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
     }
   }
 
+  const importTicketText = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (file === undefined) return
+
+    setError(null)
+    if (!file.name.toLowerCase().endsWith('.txt')) {
+      setError(t('issues.importTextInvalidType'))
+      input.value = ''
+      return
+    }
+
+    try {
+      const parsed = parseTicketText(await file.text())
+      if (parsed === null || parsed.title.length < 3 || parsed.title.length > 200 || parsed.description.length < 10 || parsed.description.length > 20000) {
+        setError(t('issues.importTextInvalidContent'))
+        return
+      }
+      setTitle(parsed.title)
+      setDescription(parsed.description)
+    } catch {
+      setError(t('issues.importTextReadError'))
+    } finally {
+      input.value = ''
+    }
+  }
+
   const runTicket = async (ticketId: number) => {
     setBusy(`run-${ticketId}`)
     setError(null)
@@ -152,6 +181,8 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
       )}
 
       <form className="project-card issues-create-form" onSubmit={submitTicket}>
+        <label>{t('issues.importTextFile')}<input type="file" accept=".txt,text/plain" onChange={(event) => void importTicketText(event)} /></label>
+        <p className="field-hint">{t('issues.importTextHint')}</p>
         <label>{t('issues.titleLabel')}<input required minLength={3} maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} /></label>
         <label>{t('issues.descriptionLabel')}<textarea required minLength={10} maxLength={20000} rows={4} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
         <button type="submit" className="btn btn-primary" disabled={busy !== null}>{busy === 'create' ? t('project.uploading') : `+ ${t('project.addIssue')}`}</button>

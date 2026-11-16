@@ -143,6 +143,7 @@
 /* Issues: ticket agent pipeline */
 .issues-create-form { display: grid; gap: 12px; margin-bottom: 18px; }
 .issues-create-form textarea { resize: vertical; font: inherit; }
+.issues-create-form .field-hint { margin: -8px 0 0; color: var(--text-muted); font-size: 12px; }
 .issues-ticket-list { display: grid; gap: 8px; }
 .issues-ticket-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
 .issues-ticket-open { display: flex; align-items: center; gap: 10px; background: none; border: none; cursor: pointer; color: var(--text); padding: 0; font-size: 13px; text-align: left; }

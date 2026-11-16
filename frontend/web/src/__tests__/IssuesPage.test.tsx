@@ -35,6 +35,12 @@ function renderPage(api: Partial<ApiClient>) {
   )
 }
 
+function textFile(name: string, contents: string, read = vi.fn().mockResolvedValue(contents)) {
+  const file = new File([contents], name, { type: 'text/plain' })
+  Object.defineProperty(file, 'text', { configurable: true, value: read })
+  return { file, read }
+}
+
 beforeEach(() => {
   localStorage.setItem('vibesolver.lang', 'ru')
 })
@@ -81,6 +87,74 @@ describe('IssuesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Добавить обращение/ }))
 
     await waitFor(() => expect(api.createTicket).toHaveBeenCalledWith(1, 'Не работает вход', 'При входе возвращается 401'))
+  })
+
+  it('prefills editable fields from a txt file and submits edited values', async () => {
+    const api = {
+      listTickets: vi.fn().mockResolvedValue([]),
+      listWorkspaceModels: vi.fn().mockResolvedValue([]),
+      getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
+      createTicket: vi.fn().mockResolvedValue(TICKET),
+      getTicket: vi.fn().mockResolvedValue(DETAIL),
+    }
+    renderPage(api)
+
+    const { file, read } = textFile('issue.txt', 'Ошибка входа\nПри входе возвращается 401')
+    fireEvent.change(await screen.findByLabelText('Загрузить обращение из TXT'), { target: { files: [file] } })
+
+    expect(await screen.findByLabelText('Заголовок')).toHaveValue('Ошибка входа')
+    expect(screen.getByLabelText('Описание')).toHaveValue('При входе возвращается 401')
+    expect(read).toHaveBeenCalledOnce()
+    expect(api.createTicket).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('Заголовок'), { target: { value: 'Ошибка входа после обновления' } })
+    fireEvent.click(screen.getByRole('button', { name: /Добавить обращение/ }))
+
+    await waitFor(() => expect(api.createTicket).toHaveBeenCalledWith(1, 'Ошибка входа после обновления', 'При входе возвращается 401'))
+  })
+
+  it('rejects non-txt files without reading or changing the form', async () => {
+    renderPage({
+      listTickets: vi.fn().mockResolvedValue([]),
+      listWorkspaceModels: vi.fn().mockResolvedValue([]),
+      getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
+    })
+
+    const titleInput = await screen.findByLabelText('Заголовок')
+    const descriptionInput = screen.getByLabelText('Описание')
+    fireEvent.change(titleInput, { target: { value: 'Существующий заголовок' } })
+    fireEvent.change(descriptionInput, { target: { value: 'Текущее описание обращения' } })
+    const { file, read } = textFile('issue.pdf', 'should not be read')
+    fireEvent.change(screen.getByLabelText('Загрузить обращение из TXT'), { target: { files: [file] } })
+
+    expect(await screen.findByText('Выберите файл с расширением .txt.')).toBeInTheDocument()
+    expect(titleInput).toHaveValue('Существующий заголовок')
+    expect(descriptionInput).toHaveValue('Текущее описание обращения')
+    expect(read).not.toHaveBeenCalled()
+  })
+
+  it('rejects empty and incomplete text and reports file read errors', async () => {
+    renderPage({
+      listTickets: vi.fn().mockResolvedValue([]),
+      listWorkspaceModels: vi.fn().mockResolvedValue([]),
+      getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
+    })
+
+    const fileInput = await screen.findByLabelText('Загрузить обращение из TXT')
+    const empty = textFile('empty.txt', '  \n\r\n')
+    fireEvent.change(fileInput, { target: { files: [empty.file] } })
+    expect(await screen.findByText('Файл должен содержать заголовок длиной 3–200 символов и описание длиной 10–20 000 символов.')).toBeInTheDocument()
+
+    const incomplete = textFile('incomplete.txt', 'Вход не работает')
+    fireEvent.change(fileInput, { target: { files: [incomplete.file] } })
+    expect(await screen.findByText('Файл должен содержать заголовок длиной 3–200 символов и описание длиной 10–20 000 символов.')).toBeInTheDocument()
+
+    const failed = textFile('unreadable.txt', '', vi.fn().mockRejectedValue(new Error('read failed')))
+    fireEvent.change(fileInput, { target: { files: [failed.file] } })
+    expect(await screen.findByText('Не удалось прочитать файл. Попробуйте выбрать его снова.')).toBeInTheDocument()
   })
 
   it('shows escalation result with reason', async () => {
