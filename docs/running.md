@@ -162,6 +162,14 @@ uv run ruff check .
 uv run mypy app
 ```
 
+Оценка качества поиска (нужен запущенный стек с проиндексированным проектом):
+
+```
+uv run python scripts/eval_retrieval.py --golden vibesolver --top-k 10 --min-recall 0.8
+```
+
+Отчёты — в `backend/eval/out/`; детали — в [rag-and-indexing-guide.md](rag-and-indexing-guide.md), раздел 16.
+
 Frontend (из `frontend/web`):
 
 ```

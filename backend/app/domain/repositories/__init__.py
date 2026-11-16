@@ -18,11 +18,20 @@ from app.domain.repositories.material_generation import (
     RetrievedChunk,
 )
 from app.domain.repositories.model_providers import ModelProviderRepository
+from app.domain.repositories.retrieval import (
+    EmbedQueries,
+    RerankGateway,
+    SearchHit,
+    SearchMeta,
+    SearchResponse,
+    SearchUnavailableError,
+)
 from app.domain.repositories.sources import SourceRepository
 
 __all__ = [
     "ConnectorCatalog",
     "ConnectorSPI",
+    "EmbedQueries",
     "ImportEnqueuer",
     "ImportFileRepository",
     "ImportRepository",
@@ -31,8 +40,13 @@ __all__ = [
     "IndexingRepository",
     "MaterialGenerationGateway",
     "ModelProviderRepository",
+    "RerankGateway",
     "ResourceSnapshotRepository",
     "RetrievedChunk",
+    "SearchHit",
+    "SearchMeta",
+    "SearchResponse",
+    "SearchUnavailableError",
     "SourceRepository",
     "SourceSnapshotRepository",
     "default_connector_catalog",

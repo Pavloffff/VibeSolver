@@ -211,3 +211,23 @@ RAGAS может помочь автоматизировать часть оце
 9. Добавить поиск по трём индексам, RRF/reranking и оценивание на golden set.
 
 Этот план сначала делает данные воспроизводимыми, затем строит три индекса, затем подключает их к поиску и агентам. Если начать с кнопки «Индексировать» до сохранения исходных Git-файлов, успешный запуск нельзя будет надёжно повторить после завершения временного клона.
+
+## 16. Поиск и оценивание (реализовано)
+
+Публичный поиск: `POST /api/v1/sources/{id}/search` с телом `{"query": "...", "index_types": ["code", ...], "top_k": 8}`. Поиск гибридный: dense (pgvector, косинус) + lexical (tsvector `simple`) по чанкам активных прогонов завершённых индексов, слияние рангов — RRF (k=60). Каждый результат содержит `path`, `branch`, строки, `symbol`, `content`, баллы и `source_ref` вида `run:<run_id>:<path>:<line>`.
+
+Опциональный rerank: при заданных `VIBESOLVER_RERANK_API_URL` и `VIBESOLVER_RERANK_MODEL` система отбирает `max(top_k × 4, 32)` гибридных кандидатов и переранжирует их cross-encoder'ом через совместимый с TEI/Jina/Cohere endpoint `POST {url}/rerank`. Отказ реранкера — деградация до гибридной выдачи (`meta.rerank_applied: false`), поиск не падает. Локально реранкер поднимается одной командой:
+
+```
+docker run -p 8080:80 ghcr.io/huggingface/text-embeddings-inference:cpu-latest \
+  --model-id BAAI/bge-reranker-v2-m3
+# .env: VIBESOLVER_RERANK_API_URL=http://localhost:8080 VIBESOLVER_RERANK_MODEL=BAAI/bge-reranker-v2-m3
+```
+
+Оценивание: золотые наборы лежат в `backend/eval/golden/*.yaml` (запрос + тип индекса + релевантные файлы). Прогон против запущенного стека:
+
+```
+cd backend && uv run python scripts/eval_retrieval.py --golden vibesolver --top-k 10 --min-recall 0.8
+```
+
+Отчёты (`report.json` + `report.md` с recall@k, MRR@k, nDCG@k, hit-rate и списком промахов) пишутся в `backend/eval/out/`; при `--min-recall` код возврата ненулевой при провале порога. Стартовый набор `vibesolver.yaml` размечен по этому же репозиторию: импортируйте архив репозитория как проект, проиндексируйте код и запускайте оценку.

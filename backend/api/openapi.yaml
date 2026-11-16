@@ -1050,6 +1050,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sources/{source_id}/search:
+    post:
+      tags:
+      - search
+      summary: Search Project
+      operationId: search_project_api_v1_sources__source_id__search_post
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /health:
     get:
       summary: Health
@@ -1656,6 +1688,131 @@ components:
       required:
       - content
       title: ResourceContentUpdate
+    SearchHitOut:
+      properties:
+        index_type:
+          type: string
+          title: Index Type
+        run_id:
+          type: integer
+          title: Run Id
+        path:
+          type: string
+          title: Path
+        branch:
+          type: string
+          title: Branch
+        start_line:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Start Line
+        end_line:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: End Line
+        symbol:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Symbol
+        content:
+          type: string
+          title: Content
+        score:
+          type: number
+          title: Score
+        rerank_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Rerank Score
+        source_ref:
+          type: string
+          title: Source Ref
+      type: object
+      required:
+      - index_type
+      - run_id
+      - path
+      - branch
+      - content
+      - score
+      - source_ref
+      title: SearchHitOut
+    SearchIn:
+      properties:
+        query:
+          type: string
+          maxLength: 2000
+          minLength: 1
+          title: Query
+        index_types:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Index Types
+        top_k:
+          type: integer
+          maximum: 50.0
+          minimum: 1.0
+          title: Top K
+          default: 8
+      additionalProperties: false
+      type: object
+      required:
+      - query
+      title: SearchIn
+    SearchMetaOut:
+      properties:
+        indexes_searched:
+          items:
+            type: string
+          type: array
+          title: Indexes Searched
+        top_k:
+          type: integer
+          title: Top K
+        candidate_k:
+          type: integer
+          title: Candidate K
+        rerank_applied:
+          type: boolean
+          title: Rerank Applied
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+        latency_ms:
+          type: number
+          title: Latency Ms
+      type: object
+      required:
+      - indexes_searched
+      - top_k
+      - candidate_k
+      - rerank_applied
+      - warnings
+      - latency_ms
+      title: SearchMetaOut
+    SearchOut:
+      properties:
+        results:
+          items:
+            $ref: '#/components/schemas/SearchHitOut'
+          type: array
+          title: Results
+        meta:
+          $ref: '#/components/schemas/SearchMetaOut'
+      type: object
+      required:
+      - results
+      - meta
+      title: SearchOut
     SourceCreate:
       properties:
         type:

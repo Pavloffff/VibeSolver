@@ -40,6 +40,42 @@ class MaterialGenerationOut(BaseModel):
     resources: list[ProjectResource]
 
 
+class SearchIn(BaseModel):
+    model_config = {"extra": "forbid", "strict": True}
+
+    query: str = Field(min_length=1, max_length=2000)
+    index_types: list[str] | None = None
+    top_k: int = Field(default=8, ge=1, le=50)
+
+
+class SearchHitOut(BaseModel):
+    index_type: str
+    run_id: int
+    path: str
+    branch: str
+    start_line: int | None = None
+    end_line: int | None = None
+    symbol: str | None = None
+    content: str
+    score: float
+    rerank_score: float | None = None
+    source_ref: str
+
+
+class SearchMetaOut(BaseModel):
+    indexes_searched: list[str]
+    top_k: int
+    candidate_k: int
+    rerank_applied: bool
+    warnings: list[str]
+    latency_ms: float
+
+
+class SearchOut(BaseModel):
+    results: list[SearchHitOut]
+    meta: SearchMetaOut
+
+
 class SourceUpdate(BaseModel):
     name: str | None = None
     config: dict[str, Any] | None = None

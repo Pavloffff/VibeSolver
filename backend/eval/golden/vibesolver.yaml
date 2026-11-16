@@ -1,0 +1,39 @@
+name: vibesolver
+project: VibeSolver
+indexes: [code]
+queries:
+  - query: "безопасная распаковка zip архива защита от zip slip"
+    relevant: [app/adapter/connectors/archive.py, app/usecase/documentation_fs.py]
+  - query: "импорт git репозитория по веткам dulwich clone"
+    relevant: [app/adapter/connectors/git.py]
+  - query: "AST чанкинг исходного кода tree-sitter грамматики декларации"
+    relevant: [app/usecase/code_indexer.py]
+  - query: "чанкинг markdown документации по заголовкам"
+    relevant: [app/usecase/documentation_indexer.py]
+  - query: "гибридный поиск плотный векторный лексический слияние RRF"
+    relevant: [app/usecase/retrieval.py, app/usecase/material_generation.py]
+    index_type: code
+  - query: "cross-encoder rerank endpoint переранкинг результатов"
+    relevant: [app/adapter/rerank.py, app/usecase/retrieval.py]
+  - query: "шифрование api ключей провайдеров pgcrypto"
+    relevant: [app/adapter/repositories/model_providers.py]
+  - query: "стратегии хранения файлов в s3 full copy git reference манифест"
+    relevant: [app/domain/storage.py]
+  - query: "фоновая задача индексации эмбеддинги батчи celery"
+    relevant: [app/adapter/indexing_tasks.py]
+  - query: "миграция таблицы чанков pgvector tsvector индексы"
+    relevant: [migrations/00004_project_indexes.sql]
+  - query: "экспериментальные функции тумблер в настройках localStorage"
+    relevant: [frontend/web/src/pages/settings-page/ui/SettingsPage.tsx]
+  - query: "провайдер моделей Z.ai каталог GLM фиксированный адрес"
+    relevant: [app/adapter/model_providers/providers.py]
+  - query: "починка невалидного json ответа модели повторный запрос"
+    relevant: [app/usecase/material_generation.py]
+  - query: "снапшоты ресурсов документации создание snapshot файлов"
+    relevant: [app/usecase/project_resources.py, app/adapter/repositories/source_snapshots.py]
+  - query: "проверка размерности embedding векторов в прогоне индексации"
+    relevant: [app/adapter/indexing_tasks.py]
+  - query: "пайплайн импорта стадий fetch persist прогресс"
+    relevant: [app/usecase/import_pipeline.py]
+  - query: "мультиагентная обработка обращений техподдержки граф тикетов"
+    relevant: [openspec/project.md, AGENTS.md]

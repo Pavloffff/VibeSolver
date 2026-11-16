@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     max_archive_unpacked_bytes: int = 2 * 1024 * 1024 * 1024
     model_secrets_key: str | None = None
     provider_request_timeout_seconds: int = 20
+    rerank_api_url: str = ""
+    rerank_model: str = ""
+    rerank_api_key: str | None = None
+    rerank_timeout_seconds: int = 20
     material_generation_timeout_seconds: int = 180
     material_generation_max_output_tokens: int = 8192
     material_generation_context_chunks: int = 24

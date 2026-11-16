@@ -22,6 +22,7 @@ from app.usecase.documentation_fs import DocumentationPathError, normalize_docum
 from app.usecase.documentation_indexer import chunk_document_file
 from app.usecase.indexing import IndexingUsecase
 from app.usecase.project_resources import ProjectResourceUsecase
+from app.usecase.retrieval import rrf_fuse
 from app.usecase.user_flow_indexer import UserFlowDocument
 
 
@@ -508,7 +509,7 @@ class MaterialGenerationUsecase:
                 )
             global_dense.extend(dense_results)
             global_lexical.extend(lexical_results)
-            query_results.append(_rrf(dense_results, lexical_results, limit))
+            query_results.append(rrf_fuse(dense_results, lexical_results, limit))
         selected: list[RetrievedChunk] = []
         selected_ids: set[int] = set()
         per_query = max(1, limit // max(1, len(query_results)))
@@ -517,7 +518,7 @@ class MaterialGenerationUsecase:
                 if chunk.chunk_id not in selected_ids and len(selected) < limit:
                     selected.append(chunk)
                     selected_ids.add(chunk.chunk_id)
-        for chunk in _rrf(global_dense, global_lexical, limit * 2):
+        for chunk in rrf_fuse(global_dense, global_lexical, limit * 2):
             if chunk.chunk_id not in selected_ids and len(selected) < limit:
                 selected.append(chunk)
                 selected_ids.add(chunk.chunk_id)
@@ -589,19 +590,6 @@ class MaterialGenerationUsecase:
             for flow in flows
         ]
         return json.dumps(normalized, ensure_ascii=False, indent=2)
-
-
-def _rrf(
-    dense: list[RetrievedChunk], lexical: list[RetrievedChunk], limit: int
-) -> list[RetrievedChunk]:
-    scores: dict[int, float] = {}
-    chunks: dict[int, RetrievedChunk] = {}
-    for results in (dense, lexical):
-        for rank, chunk in enumerate(results, start=1):
-            chunks[chunk.chunk_id] = chunk
-            scores[chunk.chunk_id] = scores.get(chunk.chunk_id, 0.0) + 1.0 / (60 + rank)
-    ranked = sorted(chunks.values(), key=lambda item: scores[item.chunk_id], reverse=True)
-    return ranked[:limit]
 
 
 def _format_context(
