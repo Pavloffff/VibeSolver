@@ -19,15 +19,20 @@ def _request_json(
     timeout: int,
     api_key: str | None = None,
     payload: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    headers = {"Accept": "application/json"}
+    request_headers = {"Accept": "application/json"}
     body = None
     if payload is not None:
-        headers["Content-Type"] = "application/json"
+        request_headers["Content-Type"] = "application/json"
         body = json.dumps(payload).encode("utf-8")
     if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    request = Request(url, data=body, headers=headers, method="POST" if body is not None else "GET")
+        request_headers["Authorization"] = f"Bearer {api_key}"
+    if headers:
+        request_headers.update(headers)
+    request = Request(
+        url, data=body, headers=request_headers, method="POST" if body is not None else "GET"
+    )
     try:
         with urlopen(request, timeout=timeout) as response:
             value = json.loads(response.read().decode("utf-8"))
@@ -189,6 +194,105 @@ def _openai_compatible_chat_completion(
     return _chat_content(message)
 
 
+def _catalog_chat_models(
+    response: Mapping[str, Any],
+    prefix: str | None = None,
+    prefixes: tuple[str, ...] | None = None,
+    source: str = "catalog",
+) -> list[ProviderModel]:
+    accepted = prefixes if prefixes is not None else ((prefix,) if prefix else ())
+    models: list[ProviderModel] = []
+    for row in _model_rows(response):
+        model_id = row.get("id")
+        if not isinstance(model_id, str):
+            continue
+        lowered = model_id.lower()
+        if accepted and not lowered.startswith(accepted):
+            continue
+        models.append(
+            ProviderModel(
+                provider_model_id=model_id,
+                display_name=str(row.get("name") or row.get("display_name") or model_id),
+                capabilities=["chat"],
+                status="available",
+                metadata={"source": source},
+            )
+        )
+    return models
+
+
+def _anthropic_headers(api_key: str) -> dict[str, str]:
+    return {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+
+
+def _anthropic_chat_completion(
+    base_url: str,
+    model_id: str,
+    messages: list[dict[str, str]],
+    timeout: int,
+    api_key: str | None,
+    max_output_tokens: int,
+) -> str:
+    system_prompt = next(
+        (item["content"] for item in messages if item.get("role") == "system"), None
+    )
+    conversation = [item for item in messages if item.get("role") != "system"]
+    payload: dict[str, Any] = {
+        "model": model_id,
+        "max_tokens": max_output_tokens,
+        "messages": conversation,
+    }
+    if system_prompt:
+        payload["system"] = system_prompt
+    response = _request_json(
+        f"{base_url.rstrip('/')}/v1/messages",
+        timeout,
+        payload=payload,
+        headers=_anthropic_headers(api_key or ""),
+    )
+    content = response.get("content")
+    blocks = content if isinstance(content, list) else []
+    text = " ".join(
+        item.get("text", "")
+        for item in blocks
+        if isinstance(item, dict) and item.get("type") == "text"
+    ).strip()
+    if not text:
+        raise ProviderUnavailableError("The model returned an empty generation response")
+    return text
+
+
+def _openai_chat_completion(
+    base_url: str,
+    model_id: str,
+    messages: list[dict[str, str]],
+    timeout: int,
+    api_key: str | None,
+    max_output_tokens: int,
+) -> str:
+    payload: dict[str, Any] = {
+        "model": model_id,
+        "messages": messages,
+        "max_completion_tokens": max_output_tokens,
+        "response_format": {"type": "json_object"},
+    }
+    try:
+        response = _request_json(
+            f"{base_url.rstrip('/')}/chat/completions", timeout, api_key, payload
+        )
+    except ProviderUnavailableError as exc:
+        if "HTTP 400" not in str(exc):
+            raise
+        payload.pop("response_format")
+        response = _request_json(
+            f"{base_url.rstrip('/')}/chat/completions", timeout, api_key, payload
+        )
+    choices = response.get("choices")
+    first = choices[0] if isinstance(choices, list) and choices else None
+    message = first.get("message") if isinstance(first, dict) else None
+    return _chat_content(message)
+
+
 def _chat_content(message: Any) -> str:
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, str) or not content.strip():
@@ -200,6 +304,9 @@ register_chat_completion_adapter("ollama", _ollama_chat_completion)
 register_chat_completion_adapter("freetoken", _openai_compatible_chat_completion)
 register_chat_completion_adapter("openrouter", _openai_compatible_chat_completion)
 register_chat_completion_adapter("zai", _openai_compatible_chat_completion)
+register_chat_completion_adapter("kimi", _openai_compatible_chat_completion)
+register_chat_completion_adapter("anthropic", _anthropic_chat_completion)
+register_chat_completion_adapter("openai", _openai_chat_completion)
 
 
 def _validated_embedding(value: Any) -> list[float]:
@@ -305,15 +412,70 @@ class ZaiAdapter:
         response = _request_json(
             f"{connection.base_url.rstrip('/')}/models", timeout, connection.api_key
         )
+        return _catalog_chat_models(response, prefix="glm", source="catalog")
+
+    def pull_model(
+        self, connection: ProviderCredentials, model_id: str, timeout: int
+    ) -> Iterator[dict[str, Any]]:
+        raise ProviderUnavailableError(
+            "Z.ai models are hosted remotely and cannot be downloaded"
+        )
+
+
+class KimiAdapter:
+    def list_models(self, connection: ProviderCredentials, timeout: int) -> list[ProviderModel]:
+        if not connection.api_key:
+            raise ProviderUnavailableError("Kimi API key is required")
+        response = _request_json(
+            f"{connection.base_url.rstrip('/')}/models", timeout, connection.api_key
+        )
+        return _catalog_chat_models(response, prefixes=("kimi", "moonshot"), source="catalog")
+
+    def pull_model(
+        self, connection: ProviderCredentials, model_id: str, timeout: int
+    ) -> Iterator[dict[str, Any]]:
+        raise ProviderUnavailableError(
+            "Kimi models are hosted remotely and cannot be downloaded"
+        )
+
+
+class OpenAIAdapter:
+    def list_models(self, connection: ProviderCredentials, timeout: int) -> list[ProviderModel]:
+        if not connection.api_key:
+            raise ProviderUnavailableError("OpenAI API key is required")
+        response = _request_json(
+            f"{connection.base_url.rstrip('/')}/models", timeout, connection.api_key
+        )
+        return _catalog_chat_models(
+            response, prefixes=("gpt-", "chatgpt-", "o1", "o3", "o4"), source="catalog"
+        )
+
+    def pull_model(
+        self, connection: ProviderCredentials, model_id: str, timeout: int
+    ) -> Iterator[dict[str, Any]]:
+        raise ProviderUnavailableError(
+            "OpenAI models are hosted remotely and cannot be downloaded"
+        )
+
+
+class AnthropicAdapter:
+    def list_models(self, connection: ProviderCredentials, timeout: int) -> list[ProviderModel]:
+        if not connection.api_key:
+            raise ProviderUnavailableError("Anthropic API key is required")
+        response = _request_json(
+            f"{connection.base_url.rstrip('/')}/v1/models",
+            timeout,
+            headers=_anthropic_headers(connection.api_key),
+        )
         models: list[ProviderModel] = []
         for row in _model_rows(response):
             model_id = row.get("id")
-            if not isinstance(model_id, str) or not model_id.lower().startswith("glm"):
+            if not isinstance(model_id, str) or not model_id.startswith("claude-"):
                 continue
             models.append(
                 ProviderModel(
                     provider_model_id=model_id,
-                    display_name=str(row.get("name") or model_id),
+                    display_name=str(row.get("display_name") or model_id),
                     capabilities=["chat"],
                     status="available",
                     metadata={"source": "catalog"},
@@ -325,7 +487,7 @@ class ZaiAdapter:
         self, connection: ProviderCredentials, model_id: str, timeout: int
     ) -> Iterator[dict[str, Any]]:
         raise ProviderUnavailableError(
-            "Z.ai models are hosted remotely and cannot be downloaded"
+            "Anthropic models are hosted remotely and cannot be downloaded"
         )
 
 
@@ -380,6 +542,30 @@ def build_provider_registry(settings: Settings | None = None) -> dict[str, Model
             adapter=ZaiAdapter(),
             default_url=config.zai_api_url,
             display_name="Z.ai",
+            requires_api_key=True,
+            fixed_url=True,
+            sync_all_models=False,
+        ),
+        "kimi": ModelProviderDefinition(
+            adapter=KimiAdapter(),
+            default_url=config.kimi_api_url,
+            display_name="Kimi (Moonshot)",
+            requires_api_key=True,
+            fixed_url=True,
+            sync_all_models=False,
+        ),
+        "anthropic": ModelProviderDefinition(
+            adapter=AnthropicAdapter(),
+            default_url=config.anthropic_api_url,
+            display_name="Anthropic",
+            requires_api_key=True,
+            fixed_url=True,
+            sync_all_models=False,
+        ),
+        "openai": ModelProviderDefinition(
+            adapter=OpenAIAdapter(),
+            default_url=config.openai_api_url,
+            display_name="OpenAI",
             requires_api_key=True,
             fixed_url=True,
             sync_all_models=False,

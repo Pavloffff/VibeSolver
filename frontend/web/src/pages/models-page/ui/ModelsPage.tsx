@@ -2,6 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getApiClient, getErrorMessage } from '../../../shared/api/client'
 import type { AvailableModel, ModelProvider, ModelProviderType, OllamaPullProgress, WorkspaceModel } from '../../../shared/api/types'
 import { useT } from '../../../shared/i18n'
+import type { TranslationKey } from '../../../shared/i18n'
+
+const PROVIDER_HINT_KEYS: Record<string, TranslationKey> = {
+  freetoken: 'models.freetokenHint',
+  zai: 'models.zaiHint',
+  kimi: 'models.kimiHint',
+  anthropic: 'models.anthropicHint',
+  openai: 'models.openaiHint',
+}
 
 interface ProviderFormState {
   providerType: string
@@ -206,6 +215,7 @@ export default function ModelsPage() {
 
   const cancelPull = () => abortController.current?.abort()
   const providerType = form === null ? undefined : providerTypes.find((item) => item.provider_type === form.providerType)
+  const providerHintKey = providerType === undefined ? undefined : PROVIDER_HINT_KEYS[providerType.provider_type]
   const visibleAvailableModels = availableModels.filter((item) => `${item.display_name} ${item.provider_model_id}`.toLowerCase().includes(search.toLowerCase()))
   const chatModels = models.filter((model) => model.capabilities.includes('chat'))
   const embeddingModels = models.filter((model) => model.capabilities.includes('embedding'))
@@ -287,8 +297,9 @@ export default function ModelsPage() {
             }}>{providerTypes.map((type) => <option key={type.provider_type} value={type.provider_type}>{type.display_name}</option>)}</select></label>
             <label>{t('models.connectionName')}<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
             <label>{t('models.apiAddress')}<input required={!providerType?.fixed_url} readOnly={providerType?.fixed_url ?? false} value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} /></label>
-            {providerType?.provider_type === 'freetoken' && <small className="models-form-hint">{t('models.freetokenHint')}</small>}
-            {providerType?.provider_type === 'zai' && <small className="models-form-hint">{t('models.zaiHint')}</small>}
+            {providerHintKey !== undefined && (
+              <small className="models-form-hint">{t(providerHintKey)}</small>
+            )}
             <label>{t('models.apiKey')}{providerType?.requires_api_key ? ' *' : ''}<input type="password" autoComplete="new-password" required={providerType?.requires_api_key === true && editingProvider === null} value={form.apiKey} placeholder={editingProvider !== null && editingProvider.has_api_key ? t('models.keyPreserved') : ''} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} /></label>
             {error !== null && <p className="error" role="alert">{error}</p>}
             <div className="modal-actions"><button type="button" className="btn" onClick={() => setForm(null)}>{t('common.cancel')}</button><button type="button" className="btn" disabled={busy !== null} onClick={() => void testProviderForm()}>{busy === 'provider-test' ? t('models.checking') : t('models.testConnection')}</button><button type="submit" className="btn btn-primary" disabled={busy !== null}>{busy === 'provider-save' ? t('project.uploading') : t('common.save')}</button></div>

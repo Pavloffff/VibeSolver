@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     ollama_api_url: str = "http://host.docker.internal:11434"
     openrouter_api_url: str = "https://openrouter.ai/api/v1"
     zai_api_url: str = "https://api.z.ai/api/paas/v4"
+    kimi_api_url: str = "https://api.moonshot.ai/v1"
+    anthropic_api_url: str = "https://api.anthropic.com"
+    openai_api_url: str = "https://api.openai.com/v1"
 
 
 @lru_cache

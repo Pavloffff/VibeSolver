@@ -38,6 +38,9 @@ async def test_catalog_lists_zai_as_default_provider(api_client: Any) -> None:
     catalog = response.json()
     assert [item["provider_type"] for item in catalog] == [
         "zai",
+        "kimi",
+        "anthropic",
+        "openai",
         "freetoken",
         "ollama",
         "openrouter",
