@@ -678,6 +678,7 @@ def _unique_generated_path(path: str, used_paths: set[str]) -> str:
 
 def _parse_generated_draft(raw: str, source_ids: list[str]) -> GeneratedMaterialDraft:
     value = _extract_json_value(raw)
+    raw_files: Any
     if isinstance(value, list):
         raw_files = value
     elif isinstance(value, dict):

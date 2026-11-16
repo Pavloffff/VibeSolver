@@ -1,5 +1,10 @@
+import pytest
+from botocore.exceptions import BotoCoreError
 from httpx import AsyncClient
 from sqlalchemy import text
+
+from app.adapter.config import get_settings
+from app.adapter.s3 import ensure_bucket, make_s3_client
 
 GIT_SOURCE_PAYLOAD: dict[str, object] = {
     "type": "git",
@@ -112,8 +117,19 @@ async def test_project_details_include_config_and_import_state(
     assert response.json()["last_import"] is None
 
 
+@pytest.fixture
+def s3_storage() -> object:
+    settings = get_settings()
+    client = make_s3_client(settings)
+    try:
+        ensure_bucket(client, settings.s3_bucket_raw)
+    except BotoCoreError:
+        pytest.skip("seaweedfs s3 not reachable")
+    return client
+
+
 async def test_project_update_merges_config_and_resources(
-    api_client: AsyncClient, db_engine, clean_database: None
+    api_client: AsyncClient, db_engine, clean_database: None, s3_storage: object
 ) -> None:
     async with db_engine.begin() as connection:
         result = await connection.execute(
@@ -124,6 +140,10 @@ async def test_project_update_merges_config_and_resources(
             {"config": '{"url":"https://github.com/x/y.git","token_ref":"private"}'},
         )
         project_id = int(result.scalar_one())
+    settings = get_settings()
+    s3_storage.put_object(
+        Bucket=settings.s3_bucket_raw, Key="uploads/guide", Body=b"guide archive"
+    )
     response = await api_client.patch(
         f"/api/v1/sources/{project_id}",
         json={

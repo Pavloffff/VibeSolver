@@ -36,6 +36,7 @@ from app.handler.schemas import (
     MaterialGenerationIn,
     MaterialGenerationOut,
     ProjectIndexStatusOut,
+    ProjectResource,
     ResourceContentOut,
     ResourceContentUpdate,
     SourceCreate,
@@ -365,7 +366,9 @@ async def generate_project_materials(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ProviderUnavailableError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return MaterialGenerationOut(resources=resources)
+    return MaterialGenerationOut(
+        resources=[ProjectResource.model_validate(item) for item in resources]
+    )
 
 
 @router.post("/{source_id}/resources/import", response_model=DocumentationImportOut)

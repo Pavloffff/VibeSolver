@@ -131,7 +131,7 @@ class SourceResourceSnapshotSqlRepository:
     ) -> int:
         snapshot_files: list[dict[str, Any]] = []
         for resource in resources:
-            path = resource.get("path", resource.get("name"))
+            path = resource.get("path") or resource.get("name")
             config = resource.get("config")
             if not isinstance(config, dict):
                 raise TypeError("resource storage metadata is missing")
