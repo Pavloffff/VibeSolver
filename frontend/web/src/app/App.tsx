@@ -7,7 +7,7 @@ import IssuesPage from '../pages/issues-page'
 import ModelsPage from '../pages/models-page'
 import { getApiBaseUrl } from '../shared/config'
 import { useT } from '../shared/i18n'
-import { getSettings, getTheme, saveTheme } from '../shared/state/settings'
+import { getSettings, getTheme, isExperimentalEnabled, saveExperimentalEnabled, saveTheme } from '../shared/state/settings'
 import type { AppSettings, Theme } from '../shared/state/settings'
 import type { Source } from '../shared/api/types'
 
@@ -29,6 +29,7 @@ export default function App() {
   )
   const [tab, setTab] = useState<Tab>('sources')
   const [theme, setTheme] = useState<Theme>(() => getTheme())
+  const [experimental, setExperimental] = useState<boolean>(() => isExperimentalEnabled())
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null)
   const [projectSection, setProjectSection] = useState<ProjectSection>('overview')
@@ -41,6 +42,11 @@ export default function App() {
   const updateTheme = (nextTheme: Theme): void => {
     setTheme(nextTheme)
     saveTheme(nextTheme)
+  }
+
+  const updateExperimental = (nextEnabled: boolean): void => {
+    setExperimental(nextEnabled)
+    saveExperimentalEnabled(nextEnabled)
   }
 
   if (settings === null) {
@@ -134,13 +140,15 @@ export default function App() {
             projectSection === 'issues' ? (
               <IssuesPage projectName={selectedProjectName ?? t('project.title')} />
             ) : (
-              <ProjectPage key={selectedProjectId} sourceId={selectedProjectId} launchError={projectLaunchError} onNameChange={setSelectedProjectName} onOpenIssues={() => setProjectSection('issues')} onBack={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }} />
+              <ProjectPage key={selectedProjectId} sourceId={selectedProjectId} launchError={projectLaunchError} experimental={experimental} onNameChange={setSelectedProjectName} onOpenIssues={() => setProjectSection('issues')} onBack={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }} />
             )
           )
         ) : (
           <SettingsPage
             theme={theme}
             onThemeChange={updateTheme}
+            experimental={experimental}
+            onExperimentalChange={updateExperimental}
             onSaved={() => {
               setSettings(getSettings())
             }}

@@ -42,6 +42,23 @@ describe('SettingsPage language selector', () => {
     expect(onThemeChange).toHaveBeenCalledWith('dark')
     expect(localStorage.getItem('vibesolver.theme')).toBe('dark')
   })
+
+  it('toggles experimental features and applies them immediately', () => {
+    const onExperimentalChange = vi.fn()
+    render(
+      <I18nProvider>
+        <SettingsPage experimental={false} onExperimentalChange={onExperimentalChange} />
+      </I18nProvider>,
+    )
+
+    const toggle = screen.getByLabelText('Показывать экспериментальные функции')
+    expect(toggle).not.toBeChecked()
+
+    fireEvent.click(toggle)
+
+    expect(onExperimentalChange).toHaveBeenCalledWith(true)
+    expect(localStorage.getItem('vibesolver.experimental')).toBe('true')
+  })
 })
 
 describe('SettingsPage in electron mode', () => {

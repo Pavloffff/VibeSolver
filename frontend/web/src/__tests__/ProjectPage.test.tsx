@@ -18,6 +18,15 @@ function renderProject(api: ApiClient) {
   render(<I18nProvider><ProjectPage sourceId={1} api={api} onBack={() => {}} onOpenIssues={() => {}} /></I18nProvider>)
 }
 
+const indexStatus = {
+  ready: false,
+  indexes: [
+    { index_type: 'code', status: 'not_started', progress: 0, run_id: null, snapshot_id: null, files_total: 0, chunks_total: 0, error: null, updated_at: null },
+    { index_type: 'documentation', status: 'not_started', progress: 0, run_id: null, snapshot_id: null, files_total: 0, chunks_total: 0, error: null, updated_at: null },
+    { index_type: 'user_flow', status: 'not_started', progress: 0, run_id: null, snapshot_id: null, files_total: 0, chunks_total: 0, error: null, updated_at: null },
+  ],
+}
+
 beforeEach(() => {
   localStorage.setItem('vibesolver.lang', 'en')
 })
@@ -31,6 +40,7 @@ describe('ProjectPage', () => {
       startImport: vi.fn(),
       listWorkspaceModels: vi.fn().mockResolvedValue([]),
       getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getProjectIndexStatus: vi.fn().mockResolvedValue(indexStatus),
     } as unknown as ApiClient
     renderProject(api)
 
@@ -38,7 +48,9 @@ describe('ProjectPage', () => {
     expect(screen.getByText('12')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Open on GitHub/ })).toHaveAttribute('href', project.config?.url)
     expect(screen.getByText('clone failed')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Start indexing' })).toBeDisabled()
+    const startButtons = screen.getAllByRole('button', { name: 'Start indexing' })
+    expect(startButtons).toHaveLength(3)
+    for (const button of startButtons) expect(button).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Edit project' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'To issues' })).toBeInTheDocument()
   })
@@ -52,6 +64,7 @@ describe('ProjectPage', () => {
       importLocalResource: vi.fn().mockResolvedValue({ added: ['guide/intro.md'], unchanged: [], conflicts: [] }),
       listWorkspaceModels: vi.fn().mockResolvedValue([]),
       getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getProjectIndexStatus: vi.fn().mockResolvedValue(indexStatus),
     } as unknown as ApiClient
     renderProject(api)
     const archive = new File(['docs'], 'guide.zip', { type: 'application/zip' })
@@ -59,7 +72,7 @@ describe('ProjectPage', () => {
 
     await waitFor(() => expect(api.importLocalResource).toHaveBeenCalledWith(1, 'documentation', archive, '', 'uploaded'))
     expect(await screen.findByRole('button', { name: 'Expand guide' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Start indexing' })).toBeDisabled()
+    for (const button of screen.getAllByRole('button', { name: 'Start indexing' })) expect(button).toBeDisabled()
   })
 
   it('opens and edits an extensionless text file from documentation', async () => {
@@ -75,6 +88,7 @@ describe('ProjectPage', () => {
       updateResourceContent: vi.fn().mockResolvedValue(undefined),
       listWorkspaceModels: vi.fn().mockResolvedValue([]),
       getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getProjectIndexStatus: vi.fn().mockResolvedValue(indexStatus),
     } as unknown as ApiClient
     renderProject(api)
 
@@ -98,6 +112,7 @@ describe('ProjectPage', () => {
       getResourceContent: vi.fn().mockResolvedValue({ content: 'fn main() {}' }),
       listWorkspaceModels: vi.fn().mockResolvedValue([]),
       getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getProjectIndexStatus: vi.fn().mockResolvedValue(indexStatus),
     } as unknown as ApiClient
     renderProject(api)
 
@@ -121,6 +136,7 @@ describe('ProjectPage', () => {
       deleteDocumentationFolder: vi.fn().mockResolvedValue(undefined),
       listWorkspaceModels: vi.fn().mockResolvedValue([]),
       getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getProjectIndexStatus: vi.fn().mockResolvedValue(indexStatus),
     } as unknown as ApiClient
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderProject(api)
@@ -140,11 +156,40 @@ describe('ProjectPage', () => {
       importLocalResource: vi.fn(),
       listWorkspaceModels: vi.fn().mockResolvedValue([]),
       getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getProjectIndexStatus: vi.fn().mockResolvedValue(indexStatus),
     } as unknown as ApiClient
     renderProject(api)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Confluence' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('Confluence connection is not available yet')
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Documentation source type' }), { target: { value: 'confluence' } })
+    fireEvent.click(screen.getByTitle('Confluence'))
+    expect(await screen.findByText('Confluence connection is not available yet. No files were added.')).toBeInTheDocument()
     expect(api.importLocalResource).not.toHaveBeenCalled()
+  })
+
+  it('hides generation actions unless experimental features are enabled', async () => {
+    const api = {
+      getSource: vi.fn().mockResolvedValue(project),
+      getProjectStats: vi.fn().mockResolvedValue({ file_count: 12 }),
+      getImportStatus: vi.fn().mockResolvedValue({ status: 'done', progress: 100, error: null }),
+      listWorkspaceModels: vi.fn().mockResolvedValue([]),
+      getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getProjectIndexStatus: vi.fn().mockResolvedValue(indexStatus),
+    } as unknown as ApiClient
+    renderProject(api)
+
+    expect(await screen.findByText('sample')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Generate docs from code' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Generate User Flow from docs' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Generation model')).not.toBeInTheDocument()
+
+    render(
+      <I18nProvider>
+        <ProjectPage sourceId={1} api={api} experimental onBack={() => {}} onOpenIssues={() => {}} />
+      </I18nProvider>,
+    )
+
+    expect(await screen.findByRole('button', { name: 'Generate docs from code' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Generate User Flow from docs' })).toBeDisabled()
+    expect(screen.getByText('Generation model')).toBeInTheDocument()
   })
 })

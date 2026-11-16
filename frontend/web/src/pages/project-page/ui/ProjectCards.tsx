@@ -74,6 +74,7 @@ export function ResourcesCard({
   documentation,
   userFlows,
   uploading,
+  generationEnabled,
   generatingCategory,
   onAdd,
   onReplace,
@@ -93,6 +94,7 @@ export function ResourcesCard({
   documentation: ProjectResource[]
   userFlows: ProjectResource[]
   uploading: ResourceCategory | null
+  generationEnabled: boolean
   generatingCategory: ResourceCategory | null
   onAdd: (category: ResourceCategory, file: File, parentPath?: string) => void
   onReplace: (category: ResourceCategory, index: number, file: File) => void
@@ -124,17 +126,17 @@ export function ResourcesCard({
   return (
     <section className="project-card resources-card">
       <div className="project-card-heading"><div><h2>{t('project.context')}</h2><p>{t('project.contextHint')}</p></div></div>
-      <label className="generation-model-picker">{t('materials.generationModel')}<select value={generationModelId ?? ''} disabled={generationModels.length === 0} onChange={(event) => onGenerationModelChange(event.target.value ? Number(event.target.value) : null)}>
+      {generationEnabled && <label className="generation-model-picker">{t('materials.generationModel')}<select value={generationModelId ?? ''} disabled={generationModels.length === 0} onChange={(event) => onGenerationModelChange(event.target.value ? Number(event.target.value) : null)}>
         <option value="">{t(generationModels.length === 0 ? 'materials.noChatModels' : 'materials.selectGenerationModel')}</option>
         {generationModels.map((model) => <option key={model.id} value={model.id}>{model.display_name} · {model.provider_name}</option>)}
-      </select></label>
-      <small>{t('materials.generationContextHint')}</small>
+      </select></label>}
+      {generationEnabled && <small>{t('materials.generationContextHint')}</small>}
       <ResourceList title={t('project.documentation')} category="documentation" items={documentation} empty={t('project.noDocumentation')} t={t} onAdd={onAdd} onAddConfluence={onAddConfluence} onDeleteFolder={onDeleteFolder} onOpenMarkdown={onOpenMarkdown} onDelete={onDelete} onReplace={handleReplace} uploading={uploading} />
       {confluenceNotice !== null && <small className="resource-generation-notice" role="status">{confluenceNotice}</small>}
-      {renderCategoryActions('documentation')}
+      {generationEnabled && renderCategoryActions('documentation')}
       <div className="resource-divider" />
       <ResourceList title={t('project.userFlow')} titleHint={t('project.userFlowHint')} category="user_flow" items={userFlows} empty={t('project.noUserFlows')} t={t} onAdd={onAdd} onDeleteFolder={onDeleteFolder} onOpenMarkdown={onOpenMarkdown} onDelete={onDelete} onReplace={handleReplace} uploading={uploading} />
-      {renderCategoryActions('user_flow')}
+      {generationEnabled && renderCategoryActions('user_flow')}
     </section>
   )
 }

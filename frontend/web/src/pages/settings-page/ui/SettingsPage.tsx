@@ -4,8 +4,9 @@ import { DEFAULT_SERVER_URL, getApiBaseUrl } from '../../../shared/config'
 import { useT } from '../../../shared/i18n'
 import { LANGS } from '../../../shared/i18n'
 import type { Lang, TranslationKey } from '../../../shared/i18n'
-import { getSettings, saveSettings, saveTheme } from '../../../shared/state/settings'
+import { getSettings, saveExperimentalEnabled, saveSettings, saveTheme } from '../../../shared/state/settings'
 import type { AppSettings, Theme } from '../../../shared/state/settings'
+import { isExperimentalEnabled } from '../../../shared/state/settings'
 
 type CheckState = 'idle' | 'checking' | 'ok' | 'err'
 
@@ -13,6 +14,8 @@ interface Props {
   onSaved?: () => void
   theme?: Theme
   onThemeChange?: (theme: Theme) => void
+  experimental?: boolean
+  onExperimentalChange?: (enabled: boolean) => void
 }
 
 const LANGUAGE_LABEL_KEYS: Record<Lang, TranslationKey> = {
@@ -21,7 +24,7 @@ const LANGUAGE_LABEL_KEYS: Record<Lang, TranslationKey> = {
   zh: 'settings.languageZh',
 }
 
-export default function SettingsPage({ onSaved, theme = 'light', onThemeChange }: Props) {
+export default function SettingsPage({ onSaved, theme = 'light', onThemeChange, experimental = isExperimentalEnabled(), onExperimentalChange }: Props) {
   const { lang, setLang, t } = useT()
   const [settings, setSettings] = useState<AppSettings>(() => getSettings() ?? { mode: 'local', serverUrl: DEFAULT_SERVER_URL })
   const [checkState, setCheckState] = useState<CheckState>('idle')
@@ -75,6 +78,11 @@ export default function SettingsPage({ onSaved, theme = 'light', onThemeChange }
   const changeTheme = (nextTheme: Theme): void => {
     saveTheme(nextTheme)
     onThemeChange?.(nextTheme)
+  }
+
+  const changeExperimental = (nextEnabled: boolean): void => {
+    saveExperimentalEnabled(nextEnabled)
+    onExperimentalChange?.(nextEnabled)
   }
 
   return (
@@ -154,6 +162,17 @@ export default function SettingsPage({ onSaved, theme = 'light', onThemeChange }
               </label>
             ))}
           </div>
+        </section>
+        <section className="settings-section">
+          <div className="settings-section-heading"><div><h2>{t('settings.experimental')}</h2><p>{t('settings.experimentalHint')}</p></div></div>
+          <label className="experimental-toggle">
+            <input
+              type="checkbox"
+              checked={experimental}
+              onChange={(event) => changeExperimental(event.target.checked)}
+            />
+            {t('settings.experimentalToggle')}
+          </label>
         </section>
         <div className="settings-actions">
         <button type="submit" className="btn btn-primary">

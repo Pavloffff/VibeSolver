@@ -13,6 +13,7 @@ const SETTINGS_STORAGE_KEY = 'vibesolver.settings'
 export const SERVER_URL_STORAGE_KEY = 'vibesolver.serverUrl'
 const LANG_STORAGE_KEY = 'vibesolver.lang'
 const THEME_STORAGE_KEY = 'vibesolver.theme'
+export const EXPERIMENTAL_STORAGE_KEY = 'vibesolver.experimental'
 
 export function getTheme(): Theme {
   return localStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light'
@@ -20,6 +21,14 @@ export function getTheme(): Theme {
 
 export function saveTheme(theme: Theme): void {
   localStorage.setItem(THEME_STORAGE_KEY, theme)
+}
+
+export function isExperimentalEnabled(): boolean {
+  return localStorage.getItem(EXPERIMENTAL_STORAGE_KEY) === 'true'
+}
+
+export function saveExperimentalEnabled(enabled: boolean): void {
+  localStorage.setItem(EXPERIMENTAL_STORAGE_KEY, String(enabled))
 }
 
 function isLang(value: string): value is Lang {

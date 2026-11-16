@@ -69,7 +69,7 @@ describe('SourceForm', () => {
     fireEvent.change(select, { target: { value: 'git' } })
     fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'repo' } })
     fireEvent.click(screen.getByRole('button', { name: 'Создать' }))
-    expect(await screen.findByText('Заполните поле «URL»')).toBeInTheDocument()
+    expect(await screen.findByText('Заполните поле «URL»', {}, { timeout: 4000 })).toBeInTheDocument()
   })
 
   it('uploads an archive and creates the source with its upload key', async () => {

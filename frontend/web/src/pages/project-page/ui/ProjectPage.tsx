@@ -12,13 +12,14 @@ type ResourceCategory = 'documentation' | 'user_flow'
 interface Props {
   sourceId: number
   api?: ApiClient
+  experimental?: boolean
   onBack: () => void
   onOpenIssues: () => void
   onNameChange?: (name: string) => void
   launchError?: string | null
 }
 
-export default function ProjectPage({ sourceId, api = getApiClient(), onBack, onOpenIssues, onNameChange, launchError = null }: Props) {
+export default function ProjectPage({ sourceId, api = getApiClient(), experimental = false, onBack, onOpenIssues, onNameChange, launchError = null }: Props) {
   const { t } = useT()
   const [source, setSource] = useState<Source | null>(null)
   const [stats, setStats] = useState<ProjectStats | null>(null)
@@ -405,6 +406,7 @@ export default function ProjectPage({ sourceId, api = getApiClient(), onBack, on
           documentation={documentation}
           userFlows={userFlows}
           uploading={uploading}
+          generationEnabled={experimental}
           generatingCategory={generatingCategory}
           generationNotice={generationNotice}
           generationNoticeCategory={generationNoticeCategory}
