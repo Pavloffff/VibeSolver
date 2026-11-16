@@ -34,7 +34,7 @@
 ## Установка
 
 ```
-git clone [EMAIL]:Pavloffff/VibeSolver.git
+git clone https://github.com/Pavloffff/VibeSolver.git
 cd VibeSolver
 cp .env.example .env
 docker compose up -d
