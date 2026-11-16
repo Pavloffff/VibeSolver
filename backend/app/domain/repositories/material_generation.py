@@ -28,7 +28,24 @@ class IndexSearchRepository(Protocol):
     ) -> list[RetrievedChunk]: ...
 
 
+@dataclass(frozen=True, slots=True)
+class GeneratedJson:
+    text: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+
 class MaterialGenerationGateway(Protocol):
+    def generate_json_with_usage(
+        self,
+        credentials: ProviderCredentials,
+        model_id: str,
+        system_prompt: str,
+        user_prompt: str,
+        timeout: int,
+        max_output_tokens: int,
+    ) -> GeneratedJson: ...
+
     def embed_queries(
         self,
         credentials: ProviderCredentials,

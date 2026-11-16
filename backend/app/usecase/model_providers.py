@@ -19,6 +19,8 @@ PROJECT_MODEL_ROLES = {
     "indexing": "embedding",
     "documentation_generation": "chat",
     "ticket_resolution": "chat",
+    "ticket_triage": "chat",
+    "ticket_resolution_cheap": "chat",
 }
 
 

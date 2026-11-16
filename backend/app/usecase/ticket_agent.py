@@ -2,13 +2,17 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from app.domain.entities import SourceNotFoundError
 from app.domain.model_provider_entities import ProviderCredentials, WorkspaceModelEntry
-from app.domain.repositories.material_generation import MaterialGenerationGateway
+from app.domain.repositories.material_generation import (
+    GeneratedJson,
+    MaterialGenerationGateway,
+)
 from app.domain.repositories.model_providers import ModelProviderRepository
 from app.domain.repositories.retrieval import SearchHit, SearchUnavailableError
 from app.domain.repositories.sources import SourceRepository
@@ -20,13 +24,18 @@ from app.domain.tickets import (
     TicketStep,
 )
 from app.usecase.retrieval import RetrievalUsecase
+from app.usecase.ticket_pricing import parse_pricing, step_cost_usd
 
 TRIAGE_SYSTEM = """You are the triage agent of a technical support pipeline for a software product.
 Classify the user ticket and prepare search queries for the knowledge base (indexed source code,
 documentation and user flows of this exact product).
 
+Estimate complexity: "simple" for known errors and questions answerable from documentation;
+"standard" for reproducible bugs; "hard" for suspected code/infrastructure defects or multi-system cases.
+
 Return ONLY JSON with this exact schema:
 {"category":"<short free-form category>","severity":"low|medium|high|critical",
+"complexity":"simple|standard|hard",
 "summary":"<one-sentence summary of the issue, in Russian>",
 "search_queries":["<1-5 specific search queries mixing the user's wording and likely code/doc terms>"],
 "missing_info":["<what a human would need to ask the user, in Russian, may be empty>"]}
@@ -52,6 +61,7 @@ class TriageResult(BaseModel):
 
     category: str = Field(min_length=1, max_length=80)
     severity: str
+    complexity: str
     summary: str = Field(min_length=1, max_length=500)
     search_queries: list[str] = Field(min_length=1, max_length=5)
     missing_info: list[str] = Field(default_factory=list)
@@ -62,6 +72,14 @@ class TriageResult(BaseModel):
         allowed = {"low", "medium", "high", "critical"}
         if value not in allowed:
             raise ValueError("severity must be one of: " + ", ".join(sorted(allowed)))
+        return value
+
+    @field_validator("complexity")
+    @classmethod
+    def _check_complexity(cls, value: str) -> str:
+        allowed = {"simple", "standard", "hard"}
+        if value not in allowed:
+            raise ValueError("complexity must be one of: " + ", ".join(sorted(allowed)))
         return value
 
     @field_validator("search_queries")
@@ -102,6 +120,13 @@ class TicketAgentConfig:
     max_output_tokens: int
     context_chunks: int
     max_context_characters: int
+
+
+@dataclass(frozen=True, slots=True)
+class ModelTarget:
+    model: WorkspaceModelEntry
+    credentials: ProviderCredentials
+    pricing: "tuple[Decimal, Decimal] | None"
 
 
 class TicketAgentUnavailableError(ValueError):
@@ -154,8 +179,8 @@ class TicketAgentUsecase:
         previous_status = ticket.status
         await self._tickets.update_result(ticket_id, "running")
         try:
-            model, credentials = await self._resolve_model(ticket.source_id)
-            triage = await self._run_triage(ticket, credentials, model)
+            targets = await self._resolve_models(ticket.source_id)
+            triage = await self._run_triage(ticket, targets.triage)
             dossier = await self._build_dossier(
                 ticket.id, ticket.source_id, triage.search_queries
             )
@@ -167,7 +192,8 @@ class TicketAgentUsecase:
                     dossier,
                     skipped_llm=True,
                 )
-            resolution = await self._run_resolver(ticket, credentials, model, dossier, triage)
+            resolver = resolver_target(triage, targets)
+            resolution = await self._run_resolver(ticket, resolver, dossier, triage)
             valid_refs = _unique([ref for ref in resolution.source_refs if ref in dossier])
             if resolution.decision == "answer" and not valid_refs:
                 return await self._escalate(
@@ -201,15 +227,26 @@ class TicketAgentUsecase:
             )
             raise
 
-    async def _resolve_model(
-        self, source_id: int
-    ) -> tuple[WorkspaceModelEntry, ProviderCredentials]:
+    async def _resolve_models(self, source_id: int) -> "PipelineTargets":
         selections = await self._models.get_project_selections(source_id)
-        model_id = selections.get("ticket_resolution")
+        strong_result = await self._target_for(
+            selections.get("ticket_resolution"),
+            fallback_error="select a chat model for the ticket pipeline before running it",
+        )
+        assert strong_result is not None
+        triage_result = await self._target_for(selections.get("ticket_triage"), fallback=strong_result)
+        assert triage_result is not None
+        cheap_selection = selections.get("ticket_resolution_cheap")
+        cheap = await self._target_for(cheap_selection) if cheap_selection else None
+        return PipelineTargets(triage=triage_result, strong=strong_result, cheap=cheap)
+
+    async def _target_for(
+        self, model_id: int | None, fallback: "ModelTarget | None" = None, fallback_error: str = ""
+    ) -> "ModelTarget | None":
         if model_id is None:
-            raise TicketAgentUnavailableError(
-                "select a chat model for the ticket pipeline before running it"
-            )
+            if fallback is not None:
+                return fallback
+            raise TicketAgentUnavailableError(fallback_error)
         model = await self._models.get_model(model_id)
         if model is None or "chat" not in model.capabilities:
             raise TicketAgentUnavailableError("the selected ticket model is unavailable")
@@ -218,17 +255,18 @@ class TicketAgentUsecase:
         credentials = await self._models.get_credentials(model.provider_connection_id)
         if credentials is None:
             raise TicketAgentUnavailableError("the ticket model provider is unavailable")
-        return model, credentials
+        return ModelTarget(
+            model=model,
+            credentials=credentials,
+            pricing=parse_pricing(model.metadata),
+        )
 
-    async def _run_triage(
-        self, ticket: Ticket, credentials: ProviderCredentials, model: WorkspaceModelEntry
-    ) -> TriageResult:
+    async def _run_triage(self, ticket: Ticket, target: ModelTarget) -> TriageResult:
         started = time.monotonic()
         prompt = f"Ticket title: {ticket.title}\n\nTicket description:\n{ticket.description}"
-        triage = await _generate_parsed(
+        triage, usage = await _generate_parsed(
             self._gateway,
-            credentials,
-            model,
+            target,
             TRIAGE_SYSTEM,
             prompt,
             TriageResult,
@@ -239,8 +277,11 @@ class TicketAgentUsecase:
             "triage",
             {"title": ticket.title, "description": ticket.description[:500]},
             triage.model_dump(),
-            model_id=model.id,
+            model_id=target.model.id,
             duration_ms=_elapsed_ms(started),
+            tokens_in=usage.input_tokens,
+            tokens_out=usage.output_tokens,
+            cost_usd=step_cost_usd(target.pricing, usage.input_tokens, usage.output_tokens),
         )
         return triage
 
@@ -276,8 +317,7 @@ class TicketAgentUsecase:
     async def _run_resolver(
         self,
         ticket: Ticket,
-        credentials: ProviderCredentials,
-        model: WorkspaceModelEntry,
+        target: ModelTarget,
         dossier: dict[str, SearchHit],
         triage: TriageResult,
     ) -> ResolutionResult:
@@ -287,23 +327,29 @@ class TicketAgentUsecase:
             f"Triage summary: {triage.summary}\n\nEvidence fragments:\n"
             + _format_dossier(dossier, self._config.max_context_characters)
         )
-        resolution = await _generate_parsed(
+        resolution, usage = await _generate_parsed(
             self._gateway,
-            credentials,
-            model,
+            target,
             RESOLVER_SYSTEM,
             prompt,
             ResolutionResult,
             self._config,
         )
         valid = _unique([ref for ref in resolution.source_refs if ref in dossier])
+        routing = {
+            "complexity": triage.complexity,
+            "tier": "cheap" if target is not None else "strong",
+        }
         await self._tickets.add_step(
             ticket.id,
             "resolve",
             {"fragments": list(dossier), "decision": resolution.decision},
-            {**resolution.model_dump(), "source_refs": valid},
-            model_id=model.id,
+            {**resolution.model_dump(), "source_refs": valid, "routing": routing},
+            model_id=target.model.id,
             duration_ms=_elapsed_ms(started),
+            tokens_in=usage.input_tokens,
+            tokens_out=usage.output_tokens,
+            cost_usd=step_cost_usd(target.pricing, usage.input_tokens, usage.output_tokens),
         )
         return resolution
 
@@ -401,36 +447,64 @@ def _unique(values: list[str]) -> list[str]:
 
 async def _generate_parsed[TSchema: BaseModel](
     gateway: MaterialGenerationGateway,
-    credentials: ProviderCredentials,
-    model: WorkspaceModelEntry,
+    target: "ModelTarget",
     system_prompt: str,
     user_prompt: str,
     schema: type[TSchema],
     config: TicketAgentConfig,
-) -> TSchema:
-    raw = await asyncio.to_thread(
-        gateway.generate_json,
-        credentials,
-        model.provider_model_id,
+) -> "tuple[TSchema, GeneratedJson]":
+    generated = await asyncio.to_thread(
+        gateway.generate_json_with_usage,
+        target.credentials,
+        target.model.provider_model_id,
         system_prompt,
         user_prompt,
         config.timeout_seconds,
         config.max_output_tokens,
     )
+    usage = GeneratedJson(
+        text=generated.text,
+        input_tokens=generated.input_tokens,
+        output_tokens=generated.output_tokens,
+    )
     try:
-        return _parse_json_output(raw, schema)
+        return _parse_json_output(generated.text, schema), usage
     except TicketAgentResponseError:
         repaired = await asyncio.to_thread(
-            gateway.generate_json,
-            credentials,
-            model.provider_model_id,
+            gateway.generate_json_with_usage,
+            target.credentials,
+            target.model.provider_model_id,
             "Convert the supplied model response into valid JSON of the required schema. "
             "Keep the same useful content. Return JSON only without Markdown fences.",
-            f"Response to repair:\n{raw[:8000]}",
+            f"Response to repair:\n{generated.text[:8000]}",
             config.timeout_seconds,
             config.max_output_tokens,
         )
-        return _parse_json_output(repaired, schema)
+        combined = GeneratedJson(
+            text=repaired.text,
+            input_tokens=_sum_usage(usage.input_tokens, repaired.input_tokens),
+            output_tokens=_sum_usage(usage.output_tokens, repaired.output_tokens),
+        )
+        return _parse_json_output(repaired.text, schema), combined
+
+
+def _sum_usage(first: int | None, second: int | None) -> int | None:
+    if first is None and second is None:
+        return None
+    return (first or 0) + (second or 0)
+
+
+@dataclass(frozen=True, slots=True)
+class PipelineTargets:
+    triage: "ModelTarget"
+    strong: "ModelTarget"
+    cheap: "ModelTarget | None"
+
+
+def resolver_target(triage: TriageResult, targets: "PipelineTargets") -> "ModelTarget":
+    if targets.cheap is not None and triage.complexity == "simple":
+        return targets.cheap
+    return targets.strong
 
 
 def _parse_json_output[TSchema: BaseModel](raw: str, schema: type[TSchema]) -> TSchema:

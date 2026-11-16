@@ -13,6 +13,7 @@ from app.domain.repositories.indexing import (
     ResourceSnapshotRepository,
 )
 from app.domain.repositories.material_generation import (
+    GeneratedJson,
     IndexSearchRepository,
     MaterialGenerationGateway,
     RetrievedChunk,
@@ -33,6 +34,7 @@ __all__ = [
     "ConnectorCatalog",
     "ConnectorSPI",
     "EmbedQueries",
+    "GeneratedJson",
     "ImportEnqueuer",
     "ImportFileRepository",
     "ImportRepository",

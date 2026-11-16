@@ -154,7 +154,7 @@ def test_anthropic_chat_completion_posts_native_messages_payload(
         return {"content": [{"type": "text", "text": "  {\"files\": []}  "}]}
 
     monkeypatch.setattr(providers, "_request_json", fake_request_json)
-    result = _anthropic_chat_completion(
+    text, usage = _anthropic_chat_completion(
         ANTHROPIC_URL,
         "claude-opus-4-8",
         [
@@ -165,7 +165,7 @@ def test_anthropic_chat_completion_posts_native_messages_payload(
         api_key="test-key",
         max_output_tokens=8192,
     )
-    assert result == '{"files": []}'
+    assert text == '{"files": []}'
     assert seen["url"] == f"{ANTHROPIC_URL}/v1/messages"
     assert seen["headers"] == {"x-api-key": "test-key", "anthropic-version": "2023-06-01"}
     assert seen["payload"] == {
@@ -246,10 +246,13 @@ def test_openai_chat_completion_uses_new_parameter_names(
         calls.append({"url": url, "payload": dict(payload) if payload else payload})
         if len(calls) == 1:
             raise ProviderUnavailableError("Provider returned HTTP 400")
-        return {"choices": [{"message": {"content": "{\"ok\": true}"}}]}
+        return {
+            "choices": [{"message": {"content": "{\"ok\": true}"}}],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 7},
+        }
 
     monkeypatch.setattr(providers, "_request_json", fake_request_json)
-    result = _openai_chat_completion(
+    text, usage = _openai_chat_completion(
         OPENAI_URL,
         "gpt-5.2",
         [
@@ -260,7 +263,8 @@ def test_openai_chat_completion_uses_new_parameter_names(
         api_key="test-key",
         max_output_tokens=8192,
     )
-    assert result == '{"ok": true}'
+    assert text == '{"ok": true}'
+    assert usage == {"input_tokens": 11, "output_tokens": 7}
     first, second = calls
     assert first["url"] == f"{OPENAI_URL}/chat/completions"
     first_payload = first["payload"]

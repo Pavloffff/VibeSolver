@@ -28,6 +28,11 @@ class TicketRepository(Protocol):
         output_data: dict[str, Any],
         model_id: int | None,
         duration_ms: int,
+        tokens_in: int | None = None,
+        tokens_out: int | None = None,
+        cost_usd: float | None = None,
     ) -> TicketStep: ...
 
     async def list_steps(self, ticket_id: int) -> list[TicketStep]: ...
+
+    async def usage_rows(self, source_id: int) -> list[tuple[str, int | None, int | None, float | None]]: ...

@@ -1,7 +1,7 @@
 import json
 from collections.abc import Callable, Iterator, Mapping
 from math import isfinite
-from typing import Any
+from typing import Any, TypedDict
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -108,8 +108,16 @@ def embed_texts(
     return embeddings
 
 
-ChatCompletionAdapter = Callable[[str, str, list[dict[str, str]], int, str | None, int], str]
+ChatCompletionAdapter = Callable[
+    [str, str, list[dict[str, str]], int, str | None, int],
+    "tuple[str, GenerationUsage]",
+]
 CHAT_COMPLETION_ADAPTERS: dict[str, ChatCompletionAdapter] = {}
+
+
+class GenerationUsage(TypedDict):
+    input_tokens: int | None
+    output_tokens: int | None
 
 
 def register_chat_completion_adapter(provider_type: str, adapter: ChatCompletionAdapter) -> None:
@@ -129,6 +137,29 @@ def complete_json(
     api_key: str | None = None,
     max_output_tokens: int = 8192,
 ) -> str:
+    text, _usage = complete_json_with_usage(
+        provider_type,
+        base_url,
+        model_id,
+        system_prompt,
+        user_prompt,
+        timeout,
+        api_key,
+        max_output_tokens,
+    )
+    return text
+
+
+def complete_json_with_usage(
+    provider_type: str,
+    base_url: str,
+    model_id: str,
+    system_prompt: str,
+    user_prompt: str,
+    timeout: int,
+    api_key: str | None = None,
+    max_output_tokens: int = 8192,
+) -> tuple[str, GenerationUsage]:
     adapter = CHAT_COMPLETION_ADAPTERS.get(provider_type)
     if adapter is None:
         raise ProviderUnavailableError("This model provider does not support text generation")
@@ -146,7 +177,7 @@ def _ollama_chat_completion(
     timeout: int,
     api_key: str | None,
     max_output_tokens: int,
-) -> str:
+) -> "tuple[str, GenerationUsage]":
     response = _request_json(
         f"{base_url.rstrip('/')}/api/chat",
         timeout,
@@ -159,7 +190,7 @@ def _ollama_chat_completion(
         },
     )
     message = response.get("message")
-    return _chat_content(message)
+    return _chat_content(message), _ollama_usage(response)
 
 
 def _openai_compatible_chat_completion(
@@ -169,7 +200,7 @@ def _openai_compatible_chat_completion(
     timeout: int,
     api_key: str | None,
     max_output_tokens: int,
-) -> str:
+) -> "tuple[str, GenerationUsage]":
     payload = {
         "model": model_id,
         "messages": messages,
@@ -188,10 +219,7 @@ def _openai_compatible_chat_completion(
         response = _request_json(
             f"{base_url.rstrip('/')}/chat/completions", timeout, api_key, payload
         )
-    choices = response.get("choices")
-    first = choices[0] if isinstance(choices, list) and choices else None
-    message = first.get("message") if isinstance(first, dict) else None
-    return _chat_content(message)
+    return _chat_content(_first_message(response)), _openai_usage(response)
 
 
 def _catalog_chat_models(
@@ -232,7 +260,7 @@ def _anthropic_chat_completion(
     timeout: int,
     api_key: str | None,
     max_output_tokens: int,
-) -> str:
+) -> "tuple[str, GenerationUsage]":
     system_prompt = next(
         (item["content"] for item in messages if item.get("role") == "system"), None
     )
@@ -259,7 +287,7 @@ def _anthropic_chat_completion(
     ).strip()
     if not text:
         raise ProviderUnavailableError("The model returned an empty generation response")
-    return text
+    return text, _anthropic_usage(response)
 
 
 def _openai_chat_completion(
@@ -269,7 +297,7 @@ def _openai_chat_completion(
     timeout: int,
     api_key: str | None,
     max_output_tokens: int,
-) -> str:
+) -> "tuple[str, GenerationUsage]":
     payload: dict[str, Any] = {
         "model": model_id,
         "messages": messages,
@@ -287,10 +315,7 @@ def _openai_chat_completion(
         response = _request_json(
             f"{base_url.rstrip('/')}/chat/completions", timeout, api_key, payload
         )
-    choices = response.get("choices")
-    first = choices[0] if isinstance(choices, list) and choices else None
-    message = first.get("message") if isinstance(first, dict) else None
-    return _chat_content(message)
+    return _chat_content(_first_message(response)), _openai_usage(response)
 
 
 def _chat_content(message: Any) -> str:
@@ -298,6 +323,43 @@ def _chat_content(message: Any) -> str:
     if not isinstance(content, str) or not content.strip():
         raise ProviderUnavailableError("The model returned an empty generation response")
     return content.strip()
+
+
+def _first_message(response: dict[str, Any]) -> Any:
+    choices = response.get("choices")
+    first = choices[0] if isinstance(choices, list) and choices else None
+    return first.get("message") if isinstance(first, dict) else None
+
+
+def _int_or_none(value: Any) -> int | None:
+    return value if isinstance(value, int) else None
+
+
+def _openai_usage(response: dict[str, Any]) -> GenerationUsage:
+    usage = response.get("usage")
+    if not isinstance(usage, dict):
+        return {"input_tokens": None, "output_tokens": None}
+    return {
+        "input_tokens": _int_or_none(usage.get("input_tokens") or usage.get("prompt_tokens")),
+        "output_tokens": _int_or_none(usage.get("output_tokens") or usage.get("completion_tokens")),
+    }
+
+
+def _anthropic_usage(response: dict[str, Any]) -> GenerationUsage:
+    usage = response.get("usage")
+    if not isinstance(usage, dict):
+        return {"input_tokens": None, "output_tokens": None}
+    return {
+        "input_tokens": _int_or_none(usage.get("input_tokens")),
+        "output_tokens": _int_or_none(usage.get("output_tokens")),
+    }
+
+
+def _ollama_usage(response: dict[str, Any]) -> GenerationUsage:
+    return {
+        "input_tokens": _int_or_none(response.get("prompt_eval_count")),
+        "output_tokens": _int_or_none(response.get("eval_count")),
+    }
 
 
 register_chat_completion_adapter("ollama", _ollama_chat_completion)

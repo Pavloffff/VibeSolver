@@ -44,4 +44,20 @@ class TicketStep:
     output_data: dict[str, Any]
     model_id: int | None = None
     duration_ms: int = 0
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    cost_usd: float | None = None
     created_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TicketStats:
+    total: int
+    by_status: dict[str, int]
+    completed: int
+    autoresolve_rate: float
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float | None
+    avg_cost_usd: float | None
+    avg_tokens_per_ticket: float

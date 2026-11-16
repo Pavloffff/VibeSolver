@@ -78,12 +78,16 @@ class TicketSqlRepository:
         output_data: dict[str, Any],
         model_id: int | None,
         duration_ms: int,
+        tokens_in: int | None = None,
+        tokens_out: int | None = None,
+        cost_usd: float | None = None,
     ) -> TicketStep:
         result = await self._session.execute(
             text(
-                "INSERT INTO ticket_steps (ticket_id, step, input_json, output_json, model_id, duration_ms) "
+                "INSERT INTO ticket_steps (ticket_id, step, input_json, output_json, model_id, duration_ms, "
+                "tokens_in, tokens_out, cost_usd) "
                 "VALUES (:ticket_id, :step, CAST(:input_json AS jsonb), CAST(:output_json AS jsonb), "
-                ":model_id, :duration_ms) RETURNING id, created_at"
+                ":model_id, :duration_ms, :tokens_in, :tokens_out, :cost_usd) RETURNING id, created_at"
             ),
             {
                 "ticket_id": ticket_id,
@@ -92,6 +96,9 @@ class TicketSqlRepository:
                 "output_json": json.dumps(output_data, ensure_ascii=False),
                 "model_id": model_id,
                 "duration_ms": duration_ms,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
+                "cost_usd": cost_usd,
             },
         )
         row = result.one()
@@ -104,13 +111,32 @@ class TicketSqlRepository:
             output_data=output_data,
             model_id=model_id,
             duration_ms=duration_ms,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=cost_usd,
             created_at=row.created_at,
         )
+
+    async def usage_rows(
+        self, source_id: int
+    ) -> list[tuple[str, int | None, int | None, float | None]]:
+        rows = await self._session.execute(
+            text(
+                "SELECT ticket.status, step.tokens_in, step.tokens_out, step.cost_usd "
+                "FROM tickets AS ticket JOIN ticket_steps AS step ON step.ticket_id = ticket.id "
+                "WHERE ticket.source_id = :source_id"
+            ),
+            {"source_id": source_id},
+        )
+        return [
+            (str(row.status), row.tokens_in, row.tokens_out, row.cost_usd)
+            for row in rows.all()
+        ]
 
     async def list_steps(self, ticket_id: int) -> list[TicketStep]:
         rows = await self._session.execute(
             text(
-                "SELECT id, ticket_id, step, input_json, output_json, model_id, duration_ms, created_at "
+                "SELECT id, ticket_id, step, input_json, output_json, model_id, duration_ms, tokens_in, tokens_out, cost_usd, created_at "
                 "FROM ticket_steps WHERE ticket_id = :ticket_id ORDER BY id"
             ),
             {"ticket_id": ticket_id},
@@ -150,5 +176,8 @@ def _to_step(row: Any) -> TicketStep:
         output_data=row.output_json if isinstance(row.output_json, dict) else {},
         model_id=int(row.model_id) if row.model_id is not None else None,
         duration_ms=int(row.duration_ms),
+        tokens_in=int(row.tokens_in) if row.tokens_in is not None else None,
+        tokens_out=int(row.tokens_out) if row.tokens_out is not None else None,
+        cost_usd=float(row.cost_usd) if row.cost_usd is not None else None,
         created_at=row.created_at if isinstance(row.created_at, datetime) else None,
     )
