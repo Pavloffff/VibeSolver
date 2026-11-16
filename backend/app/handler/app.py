@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.adapter.config import get_settings
-from app.handler.routes import connectors, model_providers, search, sources, uploads
+from app.handler.routes import connectors, model_providers, search, sources, tickets, uploads
 
 
 def create_app() -> FastAPI:
@@ -19,6 +19,7 @@ def create_app() -> FastAPI:
     app.include_router(uploads.router, prefix="/api/v1")
     app.include_router(model_providers.router, prefix="/api/v1")
     app.include_router(search.router, prefix="/api/v1")
+    app.include_router(tickets.router, prefix="/api/v1")
 
     @app.get("/health")
     async def health() -> dict[str, str]:

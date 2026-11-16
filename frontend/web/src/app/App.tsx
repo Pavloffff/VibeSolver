@@ -138,7 +138,7 @@ export default function App() {
             />
           ) : (
             projectSection === 'issues' ? (
-              <IssuesPage projectName={selectedProjectName ?? t('project.title')} />
+              <IssuesPage projectId={selectedProjectId} projectName={selectedProjectName ?? t('project.title')} />
             ) : (
               <ProjectPage key={selectedProjectId} sourceId={selectedProjectId} launchError={projectLaunchError} experimental={experimental} onNameChange={setSelectedProjectName} onOpenIssues={() => setProjectSection('issues')} onBack={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }} />
             )

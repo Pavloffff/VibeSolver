@@ -1082,6 +1082,118 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sources/{source_id}/tickets:
+    post:
+      tags:
+      - tickets
+      summary: Create Ticket
+      operationId: create_ticket_api_v1_sources__source_id__tickets_post
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketCreateIn'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketBriefOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - tickets
+      summary: List Tickets
+      operationId: list_tickets_api_v1_sources__source_id__tickets_get
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketBriefOut'
+                title: Response List Tickets Api V1 Sources  Source Id  Tickets Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tickets/{ticket_id}:
+    get:
+      tags:
+      - tickets
+      summary: Ticket Details
+      operationId: ticket_details_api_v1_tickets__ticket_id__get
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Ticket Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetailOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tickets/{ticket_id}/run:
+    post:
+      tags:
+      - tickets
+      summary: Run Ticket
+      operationId: run_ticket_api_v1_tickets__ticket_id__run_post
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Ticket Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetailOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /health:
     get:
       summary: Health
@@ -1560,10 +1672,16 @@ components:
           - type: integer
           - type: 'null'
           title: Documentation Generation
+        ticket_resolution:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Ticket Resolution
       type: object
       required:
       - indexing
       - documentation_generation
+      - ticket_resolution
       title: ModelSelectionOut
     ModelSelectionUpdate:
       properties:
@@ -1895,6 +2013,176 @@ components:
           title: Resources
       type: object
       title: SourceUpdate
+    TicketBriefOut:
+      properties:
+        id:
+          type: integer
+          title: Id
+        title:
+          type: string
+          title: Title
+        status:
+          type: string
+          title: Status
+        created_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Created At
+      type: object
+      required:
+      - id
+      - title
+      - status
+      title: TicketBriefOut
+    TicketCitationOut:
+      properties:
+        source_ref:
+          type: string
+          title: Source Ref
+        path:
+          type: string
+          title: Path
+        index_type:
+          type: string
+          title: Index Type
+        start_line:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Start Line
+        end_line:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: End Line
+      type: object
+      required:
+      - source_ref
+      - path
+      - index_type
+      title: TicketCitationOut
+    TicketCreateIn:
+      properties:
+        title:
+          type: string
+          maxLength: 200
+          minLength: 3
+          title: Title
+        description:
+          type: string
+          maxLength: 20000
+          minLength: 10
+          title: Description
+      additionalProperties: false
+      type: object
+      required:
+      - title
+      - description
+      title: TicketCreateIn
+    TicketDetailOut:
+      properties:
+        ticket:
+          $ref: '#/components/schemas/TicketOut'
+        steps:
+          items:
+            $ref: '#/components/schemas/TicketStepOut'
+          type: array
+          title: Steps
+      type: object
+      required:
+      - ticket
+      - steps
+      title: TicketDetailOut
+    TicketOut:
+      properties:
+        id:
+          type: integer
+          title: Id
+        source_id:
+          type: integer
+          title: Source Id
+        title:
+          type: string
+          title: Title
+        description:
+          type: string
+          title: Description
+        status:
+          type: string
+          title: Status
+        triage:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Triage
+        answer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Answer
+        escalate_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Escalate Reason
+        citations:
+          items:
+            $ref: '#/components/schemas/TicketCitationOut'
+          type: array
+          title: Citations
+        created_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Created At
+        updated_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Updated At
+      type: object
+      required:
+      - id
+      - source_id
+      - title
+      - description
+      - status
+      title: TicketOut
+    TicketStepOut:
+      properties:
+        step:
+          type: string
+          title: Step
+        input_data:
+          additionalProperties: true
+          type: object
+          title: Input Data
+        output_data:
+          additionalProperties: true
+          type: object
+          title: Output Data
+        model_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Model Id
+        duration_ms:
+          type: integer
+          title: Duration Ms
+        created_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Created At
+      type: object
+      required:
+      - step
+      - input_data
+      - output_data
+      - duration_ms
+      title: TicketStepOut
     UploadOut:
       properties:
         upload_key:

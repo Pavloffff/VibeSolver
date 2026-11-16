@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     material_generation_max_files: int = 12
     material_generation_max_file_bytes: int = 200_000
     material_generation_max_total_bytes: int = 1_000_000
+    ticket_agent_timeout_seconds: int = 180
+    ticket_agent_max_output_tokens: int = 8192
+    ticket_context_chunks: int = 12
+    ticket_max_context_characters: int = 24_000
     freetoken_api_url: str = "http://host.docker.internal:1920/v1"
     ollama_api_url: str = "http://host.docker.internal:11434"
     openrouter_api_url: str = "https://openrouter.ai/api/v1"

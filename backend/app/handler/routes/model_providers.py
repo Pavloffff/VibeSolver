@@ -220,6 +220,7 @@ async def get_project_model_selections(source_id: int, session: SessionDep) -> M
     return ModelSelectionOut(
         indexing=selections.get("indexing"),
         documentation_generation=selections.get("documentation_generation"),
+        ticket_resolution=selections.get("ticket_resolution"),
     )
 
 
@@ -243,6 +244,7 @@ async def set_project_model_selection(
     return ModelSelectionOut(
         indexing=selections.get("indexing"),
         documentation_generation=selections.get("documentation_generation"),
+        ticket_resolution=selections.get("ticket_resolution"),
     )
 
 

@@ -27,6 +27,7 @@ from app.domain.repositories.retrieval import (
     SearchUnavailableError,
 )
 from app.domain.repositories.sources import SourceRepository
+from app.domain.repositories.tickets import TicketRepository
 
 __all__ = [
     "ConnectorCatalog",
@@ -49,6 +50,7 @@ __all__ = [
     "SearchUnavailableError",
     "SourceRepository",
     "SourceSnapshotRepository",
+    "TicketRepository",
     "default_connector_catalog",
     "set_default_connector_catalog",
 ]

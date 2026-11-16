@@ -14,6 +14,8 @@ import type {
   ProjectResource,
   ProjectStats,
   Source,
+  TicketBrief,
+  TicketDetail,
   WorkspaceModel,
 } from './types'
 
@@ -296,6 +298,26 @@ export class ApiClient {
 
   getProjectModelSelections(sourceId: number): Promise<ProjectModelSelections> {
     return this.request<ProjectModelSelections>(`/api/v1/models/projects/${sourceId}/selections`)
+  }
+
+  createTicket(sourceId: number, title: string, description: string): Promise<TicketBrief> {
+    return this.request<TicketBrief>(`/api/v1/sources/${sourceId}/tickets`, {
+      method: 'POST', body: JSON.stringify({ title, description }),
+    })
+  }
+
+  listTickets(sourceId: number): Promise<TicketBrief[]> {
+    return this.request<TicketBrief[]>(`/api/v1/sources/${sourceId}/tickets`)
+  }
+
+  getTicket(ticketId: number): Promise<TicketDetail> {
+    return this.request<TicketDetail>(`/api/v1/tickets/${ticketId}`)
+  }
+
+  runTicket(ticketId: number): Promise<TicketDetail> {
+    return this.request<TicketDetail>(`/api/v1/tickets/${ticketId}/run`, {
+      method: 'POST', body: JSON.stringify({}),
+    })
   }
 
   setProjectModelSelection(sourceId: number, role: string, modelId: number | null): Promise<ProjectModelSelections> {

@@ -18,6 +18,7 @@ from app.domain.repositories import ModelProviderRepository, SourceRepository
 PROJECT_MODEL_ROLES = {
     "indexing": "embedding",
     "documentation_generation": "chat",
+    "ticket_resolution": "chat",
 }
 
 

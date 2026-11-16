@@ -191,6 +191,57 @@ class ModelSelectionUpdate(BaseModel):
 class ModelSelectionOut(BaseModel):
     indexing: int | None
     documentation_generation: int | None
+    ticket_resolution: int | None
+
+
+class TicketCreateIn(BaseModel):
+    model_config = {"extra": "forbid", "strict": True}
+
+    title: str = Field(min_length=3, max_length=200)
+    description: str = Field(min_length=10, max_length=20000)
+
+
+class TicketCitationOut(BaseModel):
+    source_ref: str
+    path: str
+    index_type: str
+    start_line: int | None = None
+    end_line: int | None = None
+
+
+class TicketBriefOut(BaseModel):
+    id: int
+    title: str
+    status: str
+    created_at: str | None = None
+
+
+class TicketOut(BaseModel):
+    id: int
+    source_id: int
+    title: str
+    description: str
+    status: str
+    triage: dict[str, Any] | None = None
+    answer: str | None = None
+    escalate_reason: str | None = None
+    citations: list[TicketCitationOut] = Field(default_factory=list)
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class TicketStepOut(BaseModel):
+    step: str
+    input_data: dict[str, Any]
+    output_data: dict[str, Any]
+    model_id: int | None = None
+    duration_ms: int
+    created_at: str | None = None
+
+
+class TicketDetailOut(BaseModel):
+    ticket: TicketOut
+    steps: list[TicketStepOut]
 
 
 class IndexRunOut(BaseModel):

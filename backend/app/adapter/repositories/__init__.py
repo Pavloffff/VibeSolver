@@ -8,6 +8,7 @@ from app.adapter.repositories.source_snapshots import (
     SourceSnapshotSqlRepository,
 )
 from app.adapter.repositories.sources import SourceSqlRepository
+from app.adapter.repositories.tickets import TicketSqlRepository
 
 __all__ = [
     "ImportFileSqlRepository",
@@ -18,4 +19,5 @@ __all__ = [
     "SourceResourceSnapshotSqlRepository",
     "SourceSnapshotSqlRepository",
     "SourceSqlRepository",
+    "TicketSqlRepository",
 ]

@@ -139,3 +139,23 @@
   .markdown-merge-controls select { min-width: 0; flex: 1; }
   .markdown-preview, .markdown-textarea { min-height: 45vh; }
 }
+
+/* Issues: ticket agent pipeline */
+.issues-create-form { display: grid; gap: 12px; margin-bottom: 18px; }
+.issues-create-form textarea { resize: vertical; font: inherit; }
+.issues-ticket-list { display: grid; gap: 8px; }
+.issues-ticket-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.issues-ticket-open { display: flex; align-items: center; gap: 10px; background: none; border: none; cursor: pointer; color: var(--text); padding: 0; font-size: 13px; text-align: left; }
+.issues-ticket-open:hover strong { text-decoration: underline; }
+.issue-state-new { background: var(--surface-muted); }
+.issue-state-running { background: #b6c8e8; }
+.issue-state-answered { background: #b7e2c4; }
+.issue-state-escalated { background: #f3d9a4; }
+.issue-state-failed { background: #f0b8b8; }
+.issues-ticket-detail .provider-card-meta { margin-top: 6px; }
+.issues-answer-body { white-space: pre-wrap; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); padding: 14px 16px; font-size: 13px; }
+.issues-citations ul, .issues-escalation ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 12px; }
+.issues-citations code { background: var(--surface-muted); border-radius: 4px; padding: 1px 5px; }
+.issues-escalation { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: var(--surface); }
+.issues-trace pre { background: var(--surface-muted); border-radius: 6px; padding: 8px 10px; overflow: auto; font-size: 11px; margin: 6px 0 10px; }
+.issues-trace ol { margin: 6px 0 0; padding-left: 18px; }

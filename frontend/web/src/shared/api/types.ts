@@ -116,6 +116,50 @@ export interface AvailableModel {
 export interface ProjectModelSelections {
   indexing: number | null
   documentation_generation: number | null
+  ticket_resolution?: number | null
+}
+
+export interface TicketBrief {
+  id: number
+  title: string
+  status: string
+  created_at: string | null
+}
+
+export interface TicketCitation {
+  source_ref: string
+  path: string
+  index_type: string
+  start_line: number | null
+  end_line: number | null
+}
+
+export interface Ticket {
+  id: number
+  source_id: number
+  title: string
+  description: string
+  status: string
+  triage: Record<string, unknown> | null
+  answer: string | null
+  escalate_reason: string | null
+  citations: TicketCitation[]
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface TicketStep {
+  step: string
+  input_data: Record<string, unknown>
+  output_data: Record<string, unknown>
+  model_id: number | null
+  duration_ms: number
+  created_at: string | null
+}
+
+export interface TicketDetail {
+  ticket: Ticket
+  steps: TicketStep[]
 }
 
 export interface OllamaPullProgress {

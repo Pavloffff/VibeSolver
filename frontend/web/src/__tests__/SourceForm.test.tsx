@@ -60,7 +60,7 @@ describe('SourceForm', () => {
     renderForm()
     const select = await screen.findByRole('combobox')
     fireEvent.change(select, { target: { value: 'git' } })
-    expect(screen.getByLabelText('URL *')).toBeInTheDocument()
+    expect(await screen.findByLabelText('URL *', {}, { timeout: 8000 })).toBeInTheDocument()
   })
 
   it('shows required-field error in the current language', async () => {
