@@ -117,6 +117,20 @@ export interface ProjectModelSelections {
   indexing: number | null
   documentation_generation: number | null
   ticket_resolution?: number | null
+  ticket_triage?: number | null
+  ticket_resolution_cheap?: number | null
+}
+
+export interface TicketStats {
+  total: number
+  by_status: Record<string, number>
+  completed: number
+  autoresolve_rate: number
+  tokens_in: number
+  tokens_out: number
+  cost_usd: number | null
+  avg_cost_usd: number | null
+  avg_tokens_per_ticket: number
 }
 
 export interface TicketBrief {
@@ -154,6 +168,9 @@ export interface TicketStep {
   output_data: Record<string, unknown>
   model_id: number | null
   duration_ms: number
+  tokens_in: number | null
+  tokens_out: number | null
+  cost_usd: number | null
   created_at: string | null
 }
 

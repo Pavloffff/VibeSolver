@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getApiClient, getErrorMessage } from '../../../shared/api/client'
 import type { ApiClient } from '../../../shared/api/client'
-import type { ProjectModelSelections, TicketBrief, TicketDetail, WorkspaceModel } from '../../../shared/api/types'
+import type { ProjectModelSelections, TicketBrief, TicketDetail, TicketStats, WorkspaceModel } from '../../../shared/api/types'
 import { useT } from '../../../shared/i18n'
 import type { TranslationKey } from '../../../shared/i18n'
 
@@ -25,6 +25,7 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
   const [selected, setSelected] = useState<TicketDetail | null>(null)
   const [chatModels, setChatModels] = useState<WorkspaceModel[]>([])
   const [selections, setSelections] = useState<ProjectModelSelections | null>(null)
+  const [stats, setStats] = useState<TicketStats | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
@@ -40,11 +41,12 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
     void refreshTickets().catch((requestError: unknown) => {
       if (!cancelled) setError(getErrorMessage(requestError))
     })
-    void Promise.all([api.listWorkspaceModels(), api.getProjectModelSelections(projectId)])
-      .then(([models, modelSelections]) => {
+    void Promise.all([api.listWorkspaceModels(), api.getProjectModelSelections(projectId), api.getTicketStats(projectId)])
+      .then(([models, modelSelections, ticketStats]) => {
         if (cancelled) return
         setChatModels(models.filter((model) => model.capabilities.includes('chat')))
         setSelections(modelSelections)
+        setStats(ticketStats)
       })
       .catch((requestError: unknown) => {
         if (!cancelled) setError(getErrorMessage(requestError))
@@ -52,9 +54,9 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
     return () => { cancelled = true }
   }, [api, projectId, refreshTickets])
 
-  const changeModel = async (modelId: number | null) => {
+  const changeModel = async (role: 'ticket_triage' | 'ticket_resolution' | 'ticket_resolution_cheap', modelId: number | null) => {
     try {
-      setSelections(await api.setProjectModelSelection(projectId, 'ticket_resolution', modelId))
+      setSelections(await api.setProjectModelSelection(projectId, role, modelId))
     } catch (requestError) {
       setError(getErrorMessage(requestError))
     }
@@ -85,7 +87,7 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
     try {
       const detail = await api.runTicket(ticketId)
       setSelected(detail)
-      await refreshTickets()
+      await Promise.all([refreshTickets(), api.getTicketStats(projectId).then(setStats)])
       setNotice(detail.ticket.status === 'answered' ? t('issues.answerReady') : t('issues.escalatedNotice'))
     } catch (runError) {
       setError(getErrorMessage(runError))
@@ -104,7 +106,20 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
   }
 
   const canRun = (status: string) => status !== 'running'
-  const selectedModelId = selections?.ticket_resolution ?? null
+  const modelPicker = (label: string, role: 'ticket_triage' | 'ticket_resolution' | 'ticket_resolution_cheap', modelId: number | null | undefined) => (
+    <label className="generation-model-picker" key={role}>{label}
+      <select
+        value={modelId ?? ''}
+        disabled={chatModels.length === 0}
+        onChange={(event) => void changeModel(role, event.target.value ? Number(event.target.value) : null)}
+      >
+        <option value="">{t(chatModels.length === 0 ? 'materials.noChatModels' : 'issues.selectModel')}</option>
+        {chatModels.map((model) => (
+          <option key={model.id} value={model.id}>{model.display_name} · {model.provider_name}</option>
+        ))}
+      </select>
+    </label>
+  )
 
   return (
     <div className="issues-page">
@@ -114,22 +129,27 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
           <h1>{t('project.issues')}</h1>
           <p>{t('issues.pageDescription')}</p>
         </div>
-        <label className="generation-model-picker">{t('issues.model')}
-          <select
-            value={selectedModelId ?? ''}
-            disabled={chatModels.length === 0}
-            onChange={(event) => void changeModel(event.target.value ? Number(event.target.value) : null)}
-          >
-            <option value="">{t(chatModels.length === 0 ? 'materials.noChatModels' : 'issues.selectModel')}</option>
-            {chatModels.map((model) => (
-              <option key={model.id} value={model.id}>{model.display_name} · {model.provider_name}</option>
-            ))}
-          </select>
-        </label>
+        <div className="issues-model-pickers">
+          {modelPicker(t('issues.triageModel'), 'ticket_triage', selections?.ticket_triage)}
+          {modelPicker(t('issues.resolutionModel'), 'ticket_resolution', selections?.ticket_resolution)}
+          {modelPicker(t('issues.cheapModel'), 'ticket_resolution_cheap', selections?.ticket_resolution_cheap)}
+        </div>
       </div>
 
       {error !== null && <div className="error page-alert" role="alert">{error}</div>}
       {notice !== null && <div className="success-note models-notice" role="status">{notice}</div>}
+
+      {stats !== null && (
+        <section className="project-card issues-stats" aria-label={t('issues.statsTitle')}>
+          <div className="project-card-heading"><div><h2>{t('issues.statsTitle')}</h2><p>{t('issues.statsHint')}</p></div></div>
+          <div className="provider-card-meta">
+            <span><strong>{t('issues.autoresolveRate')}</strong> {Math.round(stats.autoresolve_rate * 100)}%</span>
+            <span><strong>{t('issues.averageCost')}</strong> {stats.avg_cost_usd === null ? '—' : `$${stats.avg_cost_usd.toFixed(4)}`}</span>
+            <span><strong>{t('issues.tokenUsage')}</strong> {stats.tokens_in.toLocaleString()} / {stats.tokens_out.toLocaleString()}</span>
+            <span><strong>{t('issues.averageTokens')}</strong> {Math.round(stats.avg_tokens_per_ticket).toLocaleString()}</span>
+          </div>
+        </section>
+      )}
 
       <form className="project-card issues-create-form" onSubmit={submitTicket}>
         <label>{t('issues.titleLabel')}<input required minLength={3} maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} /></label>
@@ -227,6 +247,8 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
                 <li key={index}>
                   <strong>{step.step}</strong>
                   {step.duration_ms > 0 && <span> · {step.duration_ms} ms</span>}
+                  {(step.tokens_in !== null || step.tokens_out !== null) && <span> · {step.tokens_in ?? 0} / {step.tokens_out ?? 0} tokens</span>}
+                  {step.cost_usd !== null && <span> · ${step.cost_usd.toFixed(6)}</span>}
                   <pre>{JSON.stringify(step.output_data, null, 2)}</pre>
                 </li>
               ))}

@@ -221,6 +221,8 @@ async def get_project_model_selections(source_id: int, session: SessionDep) -> M
         indexing=selections.get("indexing"),
         documentation_generation=selections.get("documentation_generation"),
         ticket_resolution=selections.get("ticket_resolution"),
+        ticket_triage=selections.get("ticket_triage"),
+        ticket_resolution_cheap=selections.get("ticket_resolution_cheap"),
     )
 
 
@@ -245,6 +247,8 @@ async def set_project_model_selection(
         indexing=selections.get("indexing"),
         documentation_generation=selections.get("documentation_generation"),
         ticket_resolution=selections.get("ticket_resolution"),
+        ticket_triage=selections.get("ticket_triage"),
+        ticket_resolution_cheap=selections.get("ticket_resolution_cheap"),
     )
 
 

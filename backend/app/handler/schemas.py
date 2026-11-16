@@ -192,6 +192,8 @@ class ModelSelectionOut(BaseModel):
     indexing: int | None
     documentation_generation: int | None
     ticket_resolution: int | None
+    ticket_triage: int | None = None
+    ticket_resolution_cheap: int | None = None
 
 
 class TicketCreateIn(BaseModel):
@@ -216,6 +218,18 @@ class TicketBriefOut(BaseModel):
     created_at: str | None = None
 
 
+class TicketStatsOut(BaseModel):
+    total: int
+    by_status: dict[str, int]
+    completed: int
+    autoresolve_rate: float
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float | None
+    avg_cost_usd: float | None
+    avg_tokens_per_ticket: float
+
+
 class TicketOut(BaseModel):
     id: int
     source_id: int
@@ -236,6 +250,9 @@ class TicketStepOut(BaseModel):
     output_data: dict[str, Any]
     model_id: int | None = None
     duration_ms: int
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    cost_usd: float | None = None
     created_at: str | None = None
 
 

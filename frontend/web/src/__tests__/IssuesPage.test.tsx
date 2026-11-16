@@ -23,7 +23,7 @@ const DETAIL: TicketDetail = {
     updated_at: null,
   },
   steps: [
-    { step: 'triage', input_data: {}, output_data: { category: 'auth' }, model_id: 1, duration_ms: 40, created_at: null },
+    { step: 'triage', input_data: {}, output_data: { category: 'auth' }, model_id: 1, duration_ms: 40, tokens_in: null, tokens_out: null, cost_usd: null, created_at: null },
   ],
 }
 
@@ -45,12 +45,17 @@ describe('IssuesPage', () => {
       listTickets: vi.fn().mockResolvedValue([TICKET]),
       listWorkspaceModels: vi.fn().mockResolvedValue([]),
       getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null, ticket_resolution: null }),
+      getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
       getTicket: vi.fn().mockResolvedValue(DETAIL),
       runTicket: vi.fn().mockResolvedValue(DETAIL),
     }
     renderPage(api)
 
     expect(await screen.findByText('Не работает вход')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Модель триажа')).toBeInTheDocument()
+    expect(screen.getByLabelText('Модель решения')).toBeInTheDocument()
+    expect(screen.getByLabelText('Недорогая модель для простых обращений')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Статистика обращений' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Запустить агентов' }))
 
     await waitFor(() => expect(api.runTicket).toHaveBeenCalledWith(5))
@@ -65,6 +70,7 @@ describe('IssuesPage', () => {
       listTickets: vi.fn().mockResolvedValue([]),
       listWorkspaceModels: vi.fn().mockResolvedValue([]),
       getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
       createTicket: vi.fn().mockResolvedValue(TICKET),
       getTicket: vi.fn().mockResolvedValue(DETAIL),
     }
@@ -91,6 +97,7 @@ describe('IssuesPage', () => {
       listTickets: vi.fn().mockResolvedValue([{ ...TICKET, status: 'escalated' }]),
       listWorkspaceModels: vi.fn().mockResolvedValue([]),
       getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
       getTicket: vi.fn().mockResolvedValue(escalated),
     }
     renderPage(api)

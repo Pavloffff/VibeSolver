@@ -1839,6 +1839,48 @@
         }
       }
     },
+    "/api/v1/sources/{source_id}/tickets/stats": {
+      "get": {
+        "tags": [
+          "tickets"
+        ],
+        "summary": "Ticket Stats",
+        "operationId": "ticket_stats_api_v1_sources__source_id__tickets_stats_get",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketStatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tickets/{ticket_id}": {
       "get": {
         "tags": [
@@ -2647,6 +2689,28 @@
               }
             ],
             "title": "Ticket Resolution"
+          },
+          "ticket_triage": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Triage"
+          },
+          "ticket_resolution_cheap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Resolution Cheap"
           }
         },
         "type": "object",
@@ -3373,6 +3437,76 @@
         ],
         "title": "TicketOut"
       },
+      "TicketStatsOut": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Status"
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed"
+          },
+          "autoresolve_rate": {
+            "type": "number",
+            "title": "Autoresolve Rate"
+          },
+          "tokens_in": {
+            "type": "integer",
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "type": "integer",
+            "title": "Tokens Out"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "avg_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Cost Usd"
+          },
+          "avg_tokens_per_ticket": {
+            "type": "number",
+            "title": "Avg Tokens Per Ticket"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "by_status",
+          "completed",
+          "autoresolve_rate",
+          "tokens_in",
+          "tokens_out",
+          "cost_usd",
+          "avg_cost_usd",
+          "avg_tokens_per_ticket"
+        ],
+        "title": "TicketStatsOut"
+      },
       "TicketStepOut": {
         "properties": {
           "step": {
@@ -3403,6 +3537,39 @@
           "duration_ms": {
             "type": "integer",
             "title": "Duration Ms"
+          },
+          "tokens_in": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Out"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
           },
           "created_at": {
             "anyOf": [

@@ -15,6 +15,7 @@ import type {
   ProjectStats,
   Source,
   TicketBrief,
+  TicketStats,
   TicketDetail,
   WorkspaceModel,
 } from './types'
@@ -308,6 +309,10 @@ export class ApiClient {
 
   listTickets(sourceId: number): Promise<TicketBrief[]> {
     return this.request<TicketBrief[]>(`/api/v1/sources/${sourceId}/tickets`)
+  }
+
+  getTicketStats(sourceId: number): Promise<TicketStats> {
+    return this.request<TicketStats>(`/api/v1/sources/${sourceId}/tickets/stats`)
   }
 
   getTicket(ticketId: number): Promise<TicketDetail> {

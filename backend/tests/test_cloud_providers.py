@@ -7,7 +7,10 @@ from app.adapter.model_providers.providers import (
     KimiAdapter,
     OpenAIAdapter,
     _anthropic_chat_completion,
+    _anthropic_usage,
+    _ollama_usage,
     _openai_chat_completion,
+    _openai_usage,
     build_provider_registry,
 )
 from app.domain.model_provider_entities import (
@@ -117,9 +120,7 @@ def test_anthropic_lists_claude_chat_models(monkeypatch: pytest.MonkeyPatch) -> 
         }
 
     monkeypatch.setattr(providers, "_request_json", fake_request_json)
-    models = AnthropicAdapter().list_models(
-        _credentials("anthropic", ANTHROPIC_URL), timeout=5
-    )
+    models = AnthropicAdapter().list_models(_credentials("anthropic", ANTHROPIC_URL), timeout=5)
     assert seen["url"] == f"{ANTHROPIC_URL}/v1/models"
     assert seen["headers"] == {"x-api-key": "test-key", "anthropic-version": "2023-06-01"}
     assert [model.provider_model_id for model in models] == [
@@ -151,7 +152,10 @@ def test_anthropic_chat_completion_posts_native_messages_payload(
         seen["url"] = url
         seen["payload"] = payload
         seen["headers"] = headers
-        return {"content": [{"type": "text", "text": "  {\"files\": []}  "}]}
+        return {
+            "content": [{"type": "text", "text": '  {"files": []}  '}],
+            "usage": {"input_tokens": 17, "output_tokens": 8},
+        }
 
     monkeypatch.setattr(providers, "_request_json", fake_request_json)
     text, usage = _anthropic_chat_completion(
@@ -166,6 +170,7 @@ def test_anthropic_chat_completion_posts_native_messages_payload(
         max_output_tokens=8192,
     )
     assert text == '{"files": []}'
+    assert usage == {"input_tokens": 17, "output_tokens": 8}
     assert seen["url"] == f"{ANTHROPIC_URL}/v1/messages"
     assert seen["headers"] == {"x-api-key": "test-key", "anthropic-version": "2023-06-01"}
     assert seen["payload"] == {
@@ -173,6 +178,22 @@ def test_anthropic_chat_completion_posts_native_messages_payload(
         "max_tokens": 8192,
         "system": "reply with json",
         "messages": [{"role": "user", "content": "generate docs"}],
+    }
+
+
+def test_provider_usage_mappings() -> None:
+    assert _openai_usage({"usage": {"prompt_tokens": 10, "completion_tokens": 4}}) == {
+        "input_tokens": 10,
+        "output_tokens": 4,
+    }
+    assert _openai_usage({}) == {"input_tokens": None, "output_tokens": None}
+    assert _anthropic_usage({"usage": {"input_tokens": 9, "output_tokens": 3}}) == {
+        "input_tokens": 9,
+        "output_tokens": 3,
+    }
+    assert _ollama_usage({"prompt_eval_count": 7, "eval_count": 2}) == {
+        "input_tokens": 7,
+        "output_tokens": 2,
     }
 
 
@@ -220,9 +241,7 @@ def test_openai_lists_chat_models_only(monkeypatch: pytest.MonkeyPatch) -> None:
         }
 
     monkeypatch.setattr(providers, "_request_json", fake_request_json)
-    models = OpenAIAdapter().list_models(
-        _credentials("openai", OPENAI_URL), timeout=5
-    )
+    models = OpenAIAdapter().list_models(_credentials("openai", OPENAI_URL), timeout=5)
     assert [model.provider_model_id for model in models] == [
         "gpt-5.2",
         "chatgpt-4o-latest",
@@ -247,7 +266,7 @@ def test_openai_chat_completion_uses_new_parameter_names(
         if len(calls) == 1:
             raise ProviderUnavailableError("Provider returned HTTP 400")
         return {
-            "choices": [{"message": {"content": "{\"ok\": true}"}}],
+            "choices": [{"message": {"content": '{"ok": true}'}}],
             "usage": {"prompt_tokens": 11, "completion_tokens": 7},
         }
 

@@ -12,10 +12,16 @@ from app.domain.model_provider_entities import (
     ProviderCredentials,
     ProviderModel,
 )
-from app.usecase.model_providers import ModelProviderUsecase
+from app.usecase.model_providers import PROJECT_MODEL_ROLES, ModelProviderUsecase
 
 SECRETS_KEY = "test-secrets-key"
 ZAI_URL = "https://api.z.ai/api/paas/v4"
+
+
+def test_ticket_model_roles_require_chat_capability() -> None:
+    assert PROJECT_MODEL_ROLES["ticket_triage"] == "chat"
+    assert PROJECT_MODEL_ROLES["ticket_resolution"] == "chat"
+    assert PROJECT_MODEL_ROLES["ticket_resolution_cheap"] == "chat"
 
 
 @pytest.fixture
@@ -57,9 +63,7 @@ async def test_api_key_is_stored_encrypted_and_returned_only_via_credentials(
     db_engine: Any, db_session: AsyncSession, clean_model_providers: None
 ) -> None:
     repository = ModelProviderSqlRepository(db_session, SECRETS_KEY)
-    connection = await repository.create_connection(
-        "zai", "Z.ai", ZAI_URL, "secret-api-key"
-    )
+    connection = await repository.create_connection("zai", "Z.ai", ZAI_URL, "secret-api-key")
     assert connection.has_api_key is True
 
     async with db_engine.begin() as database:
@@ -85,9 +89,7 @@ async def test_update_without_api_key_preserves_stored_secret(
     db_session: AsyncSession, clean_model_providers: None
 ) -> None:
     repository = ModelProviderSqlRepository(db_session, SECRETS_KEY)
-    connection = await repository.create_connection(
-        "zai", "Z.ai", ZAI_URL, "secret-api-key"
-    )
+    connection = await repository.create_connection("zai", "Z.ai", ZAI_URL, "secret-api-key")
     updated = await repository.update_connection(connection.id, "Z.ai prod", ZAI_URL, None)
     assert updated is not None
     credentials = await repository.get_credentials(connection.id)
@@ -100,9 +102,7 @@ class FakePullAdapter:
     def __init__(self) -> None:
         self.pulled: list[str] = []
 
-    def list_models(
-        self, connection: ProviderCredentials, timeout: int
-    ) -> list[ProviderModel]:
+    def list_models(self, connection: ProviderCredentials, timeout: int) -> list[ProviderModel]:
         return [
             ProviderModel(
                 provider_model_id="llama3",

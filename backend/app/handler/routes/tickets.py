@@ -21,6 +21,7 @@ from app.handler.schemas import (
     TicketCreateIn,
     TicketDetailOut,
     TicketOut,
+    TicketStatsOut,
     TicketStepOut,
 )
 from app.usecase.ticket_agent import (
@@ -51,9 +52,7 @@ def build_ticket_usecase(session: AsyncSession) -> TicketAgentUsecase:
     )
 
 
-@router.post(
-    "/sources/{source_id}/tickets", status_code=201, response_model=TicketBriefOut
-)
+@router.post("/sources/{source_id}/tickets", status_code=201, response_model=TicketBriefOut)
 async def create_ticket(
     source_id: int, payload: TicketCreateIn, session: SessionDep
 ) -> TicketBriefOut:
@@ -73,6 +72,25 @@ async def list_tickets(source_id: int, session: SessionDep) -> list[TicketBriefO
     except SourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Project not found") from exc
     return [_brief_out(ticket) for ticket in tickets]
+
+
+@router.get("/sources/{source_id}/tickets/stats", response_model=TicketStatsOut)
+async def ticket_stats(source_id: int, session: SessionDep) -> TicketStatsOut:
+    try:
+        stats = await build_ticket_usecase(session).ticket_stats(source_id)
+    except SourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+    return TicketStatsOut(
+        total=stats.total,
+        by_status=stats.by_status,
+        completed=stats.completed,
+        autoresolve_rate=stats.autoresolve_rate,
+        tokens_in=stats.tokens_in,
+        tokens_out=stats.tokens_out,
+        cost_usd=stats.cost_usd,
+        avg_cost_usd=stats.avg_cost_usd,
+        avg_tokens_per_ticket=stats.avg_tokens_per_ticket,
+    )
 
 
 @router.get("/tickets/{ticket_id}", response_model=TicketDetailOut)
@@ -133,6 +151,9 @@ def _step_out(step: TicketStep) -> TicketStepOut:
         output_data=step.output_data,
         model_id=step.model_id,
         duration_ms=step.duration_ms,
+        tokens_in=step.tokens_in,
+        tokens_out=step.tokens_out,
+        cost_usd=step.cost_usd,
         created_at=_iso(step.created_at),
     )
 

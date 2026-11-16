@@ -21,6 +21,7 @@ from app.domain.tickets import (
     Ticket,
     TicketConflictError,
     TicketNotFoundError,
+    TicketStats,
     TicketStep,
 )
 from app.usecase.retrieval import RetrievalUsecase
@@ -164,6 +165,11 @@ class TicketAgentUsecase:
             raise SourceNotFoundError(f"project not found: {source_id}")
         return await self._tickets.list_for_source(source_id)
 
+    async def ticket_stats(self, source_id: int) -> TicketStats:
+        if await self._sources.get_any(source_id) is None:
+            raise SourceNotFoundError(f"project not found: {source_id}")
+        return await self._tickets.stats(source_id)
+
     async def ticket_details(self, ticket_id: int) -> tuple[Ticket, list[TicketStep]]:
         ticket = await self._tickets.get(ticket_id)
         if ticket is None:
@@ -181,9 +187,7 @@ class TicketAgentUsecase:
         try:
             targets = await self._resolve_models(ticket.source_id)
             triage = await self._run_triage(ticket, targets.triage)
-            dossier = await self._build_dossier(
-                ticket.id, ticket.source_id, triage.search_queries
-            )
+            dossier = await self._build_dossier(ticket.id, ticket.source_id, triage.search_queries)
             if not dossier:
                 return await self._escalate(
                     ticket_id,
@@ -193,7 +197,17 @@ class TicketAgentUsecase:
                     skipped_llm=True,
                 )
             resolver = resolver_target(triage, targets)
-            resolution = await self._run_resolver(ticket, resolver, dossier, triage)
+            tier = "cheap" if resolver is targets.cheap else "strong"
+            routing_reason = (
+                "simple ticket routed to the configured low-cost model"
+                if tier == "cheap"
+                else "standard or hard ticket routed to the strong model"
+                if triage.complexity != "simple"
+                else "no low-cost model is configured; using the strong model"
+            )
+            resolution = await self._run_resolver(
+                ticket, resolver, dossier, triage, tier=tier, routing_reason=routing_reason
+            )
             valid_refs = _unique([ref for ref in resolution.source_refs if ref in dossier])
             if resolution.decision == "answer" and not valid_refs:
                 return await self._escalate(
@@ -222,9 +236,7 @@ class TicketAgentUsecase:
             await self._tickets.update_result(ticket_id, previous_status)
             raise
         except Exception as exc:
-            await self._tickets.update_result(
-                ticket_id, "failed", escalate_reason=str(exc)[:500]
-            )
+            await self._tickets.update_result(ticket_id, "failed", escalate_reason=str(exc)[:500])
             raise
 
     async def _resolve_models(self, source_id: int) -> "PipelineTargets":
@@ -234,7 +246,9 @@ class TicketAgentUsecase:
             fallback_error="select a chat model for the ticket pipeline before running it",
         )
         assert strong_result is not None
-        triage_result = await self._target_for(selections.get("ticket_triage"), fallback=strong_result)
+        triage_result = await self._target_for(
+            selections.get("ticket_triage"), fallback=strong_result
+        )
         assert triage_result is not None
         cheap_selection = selections.get("ticket_resolution_cheap")
         cheap = await self._target_for(cheap_selection) if cheap_selection else None
@@ -320,6 +334,8 @@ class TicketAgentUsecase:
         target: ModelTarget,
         dossier: dict[str, SearchHit],
         triage: TriageResult,
+        tier: str,
+        routing_reason: str,
     ) -> ResolutionResult:
         started = time.monotonic()
         prompt = (
@@ -338,7 +354,8 @@ class TicketAgentUsecase:
         valid = _unique([ref for ref in resolution.source_refs if ref in dossier])
         routing = {
             "complexity": triage.complexity,
-            "tier": "cheap" if target is not None else "strong",
+            "tier": tier,
+            "reason": routing_reason,
         }
         await self._tickets.add_step(
             ticket.id,
@@ -381,9 +398,7 @@ class TicketAgentUsecase:
         return updated
 
 
-def _interleave_deduped(
-    per_query_results: list[list[SearchHit]], limit: int
-) -> list[SearchHit]:
+def _interleave_deduped(per_query_results: list[list[SearchHit]], limit: int) -> list[SearchHit]:
     seen: set[str] = set()
     ordered: list[SearchHit] = []
     position = 0

@@ -1,6 +1,6 @@
 from typing import Any, Protocol
 
-from app.domain.tickets import Ticket, TicketStep
+from app.domain.tickets import Ticket, TicketStats, TicketStep
 
 
 class TicketRepository(Protocol):
@@ -36,3 +36,5 @@ class TicketRepository(Protocol):
     async def list_steps(self, ticket_id: int) -> list[TicketStep]: ...
 
     async def usage_rows(self, source_id: int) -> list[tuple[str, int | None, int | None, float | None]]: ...
+
+    async def stats(self, source_id: int) -> TicketStats: ...

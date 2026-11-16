@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.tickets import Ticket, TicketStep
+from app.domain.tickets import TICKET_STATUSES, Ticket, TicketStats, TicketStep
 
 
 class TicketSqlRepository:
@@ -64,7 +64,9 @@ class TicketSqlRepository:
                 "triage": json.dumps(triage, ensure_ascii=False) if triage is not None else None,
                 "answer": answer,
                 "escalate_reason": escalate_reason,
-                "citations": json.dumps(citations, ensure_ascii=False) if citations is not None else None,
+                "citations": json.dumps(citations, ensure_ascii=False)
+                if citations is not None
+                else None,
             },
         )
         await self._session.commit()
@@ -129,9 +131,59 @@ class TicketSqlRepository:
             {"source_id": source_id},
         )
         return [
-            (str(row.status), row.tokens_in, row.tokens_out, row.cost_usd)
-            for row in rows.all()
+            (str(row.status), row.tokens_in, row.tokens_out, row.cost_usd) for row in rows.all()
         ]
+
+    async def stats(self, source_id: int) -> TicketStats:
+        rows = await self._session.execute(
+            text(
+                "WITH per_ticket AS ("
+                " SELECT ticket.id, ticket.status, "
+                " COALESCE(SUM(step.tokens_in), 0)::bigint AS tokens_in, "
+                " COALESCE(SUM(step.tokens_out), 0)::bigint AS tokens_out, "
+                " SUM(step.cost_usd) AS cost_usd "
+                " FROM tickets AS ticket LEFT JOIN ticket_steps AS step ON step.ticket_id = ticket.id "
+                " WHERE ticket.source_id = :source_id GROUP BY ticket.id, ticket.status"
+                "), status_counts AS ("
+                " SELECT status, COUNT(*)::bigint AS count FROM per_ticket GROUP BY status"
+                "), totals AS ("
+                " SELECT COUNT(*)::bigint AS total, "
+                " COUNT(*) FILTER (WHERE status IN ('answered', 'escalated', 'failed'))::bigint AS completed, "
+                " COUNT(*) FILTER (WHERE status = 'answered')::bigint AS answered, "
+                " COUNT(cost_usd) FILTER (WHERE status IN ('answered', 'escalated', 'failed'))::bigint AS completed_priced, "
+                " COALESCE(SUM(tokens_in), 0)::bigint AS tokens_in, "
+                " COALESCE(SUM(tokens_out), 0)::bigint AS tokens_out, SUM(cost_usd) AS cost_usd, "
+                " SUM(cost_usd) FILTER (WHERE status IN ('answered', 'escalated', 'failed')) AS completed_cost, "
+                " COALESCE(SUM(COALESCE(tokens_in, 0) + COALESCE(tokens_out, 0)) FILTER (WHERE status IN ('answered', 'escalated', 'failed')), 0)::bigint AS completed_tokens "
+                " FROM per_ticket"
+                ") SELECT totals.*, status_counts.status, status_counts.count "
+                "FROM totals LEFT JOIN status_counts ON TRUE"
+            ),
+            {"source_id": source_id},
+        )
+        result = rows.all()
+        first = result[0]
+        by_status = {status: 0 for status in TICKET_STATUSES}
+        for row in result:
+            if row.status is not None:
+                by_status[str(row._mapping["status"])] = int(row._mapping["count"])
+        total = int(first.total)
+        completed = int(first.completed)
+        cost = float(first.cost_usd) if first.cost_usd is not None else None
+        completed_cost = float(first.completed_cost) if first.completed_cost is not None else None
+        return TicketStats(
+            total=total,
+            by_status=by_status,
+            completed=completed,
+            autoresolve_rate=int(first.answered) / completed if completed else 0.0,
+            tokens_in=int(first.tokens_in),
+            tokens_out=int(first.tokens_out),
+            cost_usd=cost,
+            avg_cost_usd=completed_cost / int(first.completed_priced)
+            if first.completed_priced and completed_cost is not None
+            else None,
+            avg_tokens_per_ticket=int(first.completed_tokens) / completed if completed else 0.0,
+        )
 
     async def list_steps(self, ticket_id: int) -> list[TicketStep]:
         rows = await self._session.execute(
