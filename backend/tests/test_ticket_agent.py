@@ -15,6 +15,7 @@ from app.domain.repositories.retrieval import (
 )
 from app.domain.tickets import Ticket, TicketConflictError
 from app.usecase.ticket_agent import (
+    RESOLVER_SYSTEM,
     ModelTarget,
     PipelineTargets,
     ResolutionResult,
@@ -71,6 +72,7 @@ class FakeTickets:
         self.next_id = 1
         self.tickets: dict[int, Ticket] = {}
         self.steps: list[Any] = []
+        self.unready_log_attachments = False
 
     async def create(self, source_id: int, title: str, description: str) -> Ticket:
         ticket = Ticket(
@@ -120,6 +122,9 @@ class FakeTickets:
     async def list_steps(self, ticket_id: int) -> list[Any]:
         return [item for item in self.steps if item["ticket_id"] == ticket_id]
 
+    async def has_unready_log_attachments(self, ticket_id: int) -> bool:
+        return self.unready_log_attachments
+
 
 class FakeModels:
     def __init__(self, selection: int | None = 1, selections: dict[str, int] | None = None) -> None:
@@ -156,9 +161,15 @@ class FakeModels:
 
 
 class FakeRetrieval:
-    def __init__(self, hits: list[SearchHit] | None = None, fail: bool = False) -> None:
+    def __init__(
+        self,
+        hits: list[SearchHit] | None = None,
+        fail: bool = False,
+        log_hits: list[SearchHit] | None = None,
+    ) -> None:
         self.hits = hits if hits is not None else [_hit(n) for n in range(4)]
         self.fail = fail
+        self.log_hits = log_hits or []
         self.calls: list[str] = []
 
     async def search(
@@ -177,6 +188,37 @@ class FakeRetrieval:
                 warnings=[],
                 latency_ms=1.0,
             ),
+        )
+
+    async def search_ticket_logs(
+        self, source_id: int, ticket_id: int, query: str, top_k: int
+    ) -> SearchResponse:
+        return SearchResponse(
+            hits=list(self.log_hits[:top_k]),
+            meta=SearchMeta(
+                indexes_searched=["ticket-log"],
+                top_k=top_k,
+                candidate_k=top_k,
+                rerank_applied=False,
+                warnings=[],
+                latency_ms=1.0,
+            ),
+        )
+
+    async def search_ticket_context(
+        self, source_id: int, ticket_id: int, query: str, top_k: int
+    ) -> SearchResponse:
+        try:
+            project = await self.search(source_id, query, None, top_k)
+        except SearchUnavailableError:
+            project = SearchResponse(
+                hits=[],
+                meta=SearchMeta([], top_k, top_k, False, [], 1.0),
+            )
+        logs = await self.search_ticket_logs(source_id, ticket_id, query, top_k)
+        return SearchResponse(
+            hits=[*project.hits, *logs.hits][:top_k],
+            meta=project.meta,
         )
 
 
@@ -281,6 +323,58 @@ async def test_run_answers_with_valid_citations() -> None:
     assert tickets.steps[-1]["output"]["routing"]["tier"] == "strong"
     assert tickets.steps[-1]["tokens_in"] is None
     assert len(gateway.calls) == 2
+
+
+def test_resolver_instructions_distinguish_operational_causes_and_normal_flows() -> None:
+    assert "OOM-kill" in RESOLVER_SYSTEM
+    assert "disk exhaustion" in RESOLVER_SYSTEM
+    assert "expected user flow" in RESOLVER_SYSTEM
+    assert "claim a code defect unless independent evidence supports it" in RESOLVER_SYSTEM
+
+
+async def test_run_stops_before_models_when_log_attachment_is_not_ready() -> None:
+    tickets = FakeTickets()
+    tickets.unready_log_attachments = True
+    gateway = FakeGateway([TRIAGE_JSON, ANSWER_JSON])
+    usecase = _usecase(tickets, gateway)
+    ticket = await usecase.create_ticket(1, "OOM", "Worker stopped unexpectedly")
+
+    with pytest.raises(TicketConflictError, match="log archive"):
+        await usecase.run(ticket.id)
+
+    assert ticket.status == "new"
+    assert gateway.calls == []
+
+
+async def test_run_includes_current_ticket_logs_as_scoped_citations() -> None:
+    tickets = FakeTickets()
+    retrieval = FakeRetrieval(hits=[])
+    gateway = FakeGateway([TRIAGE_JSON, ANSWER_JSON])
+    usecase = _usecase(tickets, gateway, retrieval=retrieval)
+    ticket = await usecase.create_ticket(1, "OOM", "Worker stopped unexpectedly")
+    retrieval.log_hits = [
+        SearchHit(
+            index_type="ticket-log",
+            run_id=0,
+            path="logs/server.log",
+            branch="",
+            start_line=17,
+            end_line=22,
+            symbol=None,
+            content="OOM killer terminated worker",
+            score=0.02,
+            ticket_id=ticket.id,
+            attachment_id=9,
+            event_timestamp="2026-11-17T01:02:03Z",
+        )
+    ]
+
+    result = await usecase.run(ticket.id)
+
+    assert result.status == "answered"
+    assert result.citations is not None
+    assert result.citations[0]["source_ref"].startswith(f"ticket:{ticket.id}:attachment:9:")
+    assert result.citations[0]["event_timestamp"] == "2026-11-17T01:02:03Z"
 
 
 async def test_simple_ticket_uses_cheap_model_and_records_usage_and_cost() -> None:

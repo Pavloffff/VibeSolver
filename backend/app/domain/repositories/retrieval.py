@@ -17,10 +17,20 @@ class SearchHit:
     content: str
     score: float
     rerank_score: float | None = None
+    ticket_id: int | None = None
+    attachment_id: int | None = None
+    event_timestamp: str | None = None
 
     @property
     def source_ref(self) -> str:
-        return f"run:{self.run_id}:{self.path}:{self.start_line if self.start_line is not None else 0}"
+        if self.ticket_id is not None and self.attachment_id is not None:
+            return (
+                f"ticket:{self.ticket_id}:attachment:{self.attachment_id}:"
+                f"{self.path}:{self.start_line if self.start_line is not None else 0}"
+            )
+        return (
+            f"run:{self.run_id}:{self.path}:{self.start_line if self.start_line is not None else 0}"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,9 +54,7 @@ class SearchUnavailableError(RuntimeError):
 
 
 class RerankGateway(Protocol):
-    def rerank(
-        self, query: str, documents: list[str], top_n: int
-    ) -> list[tuple[int, float]]: ...
+    def rerank(self, query: str, documents: list[str], top_n: int) -> list[tuple[int, float]]: ...
 
 
 EmbedQueries = Callable[[ProviderCredentials, str, list[str], int], list[list[float]]]

@@ -2,10 +2,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ApiClient } from '../shared/api/client'
 import type { TicketBrief, TicketDetail } from '../shared/api/types'
+import type { TicketLogAttachment } from '../shared/api/types'
 import IssuesPage from '../pages/issues-page'
 import { I18nProvider } from '../shared/i18n'
 
 const TICKET: TicketBrief = { id: 5, title: 'Не работает вход', status: 'new', created_at: null }
+const QUEUED_LOG: TicketLogAttachment = {
+  id: 17,
+  filename: 'incident.zip',
+  size_bytes: 2048,
+  status: 'queued',
+  error: null,
+  created_at: null,
+  updated_at: null,
+}
 const DETAIL: TicketDetail = {
   ticket: {
     id: 5,
@@ -53,6 +63,7 @@ describe('IssuesPage', () => {
       getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null, ticket_resolution: null }),
       getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
       getTicket: vi.fn().mockResolvedValue(DETAIL),
+      listTicketLogAttachments: vi.fn().mockResolvedValue([]),
       runTicket: vi.fn().mockResolvedValue(DETAIL),
     }
     renderPage(api)
@@ -87,6 +98,46 @@ describe('IssuesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Добавить обращение/ }))
 
     await waitFor(() => expect(api.createTicket).toHaveBeenCalledWith(1, 'Не работает вход', 'При входе возвращается 401'))
+  })
+
+  it('disables running a selected issue while its log archive is processing', async () => {
+    const newDetail: TicketDetail = {
+      ...DETAIL,
+      ticket: { ...DETAIL.ticket, status: 'new', answer: null, citations: [] },
+    }
+    const api = {
+      listTickets: vi.fn().mockResolvedValue([TICKET]),
+      listWorkspaceModels: vi.fn().mockResolvedValue([]),
+      getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null }),
+      getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
+      getTicket: vi.fn().mockResolvedValue(newDetail),
+      listTicketLogAttachments: vi.fn().mockResolvedValue([QUEUED_LOG]),
+      runTicket: vi.fn(),
+    }
+    renderPage(api)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Не работает вход/ }))
+    expect(await screen.findByText('В очереди')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Запустить агентов' })).toBeDisabled()
+    expect(api.runTicket).not.toHaveBeenCalled()
+  })
+
+  it('disables running pending-log tickets before opening their details', async () => {
+    const pendingTicket = { ...TICKET, has_unready_log_attachments: true }
+    const api = {
+      listTickets: vi.fn().mockResolvedValue([pendingTicket]),
+      listWorkspaceModels: vi.fn().mockResolvedValue([]),
+      getProjectModelSelections: vi.fn().mockResolvedValue({ indexing: null, documentation_generation: null, ticket_resolution: null }),
+      getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
+      getTicket: vi.fn().mockResolvedValue(DETAIL),
+      listTicketLogAttachments: vi.fn().mockResolvedValue([QUEUED_LOG]),
+      runTicket: vi.fn(),
+    }
+    renderPage(api)
+
+    expect(await screen.findByText('Не работает вход')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Запустить агентов' })).toBeDisabled()
+    expect(api.runTicket).not.toHaveBeenCalled()
   })
 
   it('prefills editable fields from a txt file and submits edited values', async () => {

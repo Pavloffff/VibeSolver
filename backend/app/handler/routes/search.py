@@ -12,6 +12,7 @@ from app.adapter.repositories import (
     ModelProviderSqlRepository,
     SourceSqlRepository,
 )
+from app.adapter.repositories.ticket_log_search import TicketLogSearchSqlRepository
 from app.adapter.rerank import build_rerank_gateway
 from app.domain.entities import SourceNotFoundError
 from app.domain.model_provider_entities import ProviderUnavailableError
@@ -33,13 +34,12 @@ def build_retrieval_usecase(session: AsyncSession) -> RetrievalUsecase:
         embed=MaterialGenerationAdapter().embed_queries,
         rerank=build_rerank_gateway(settings),
         request_timeout=settings.provider_request_timeout_seconds,
+        ticket_log_search=TicketLogSearchSqlRepository(session),
     )
 
 
 @router.post("/{source_id}/search", response_model=SearchOut)
-async def search_project(
-    source_id: int, payload: SearchIn, session: SessionDep
-) -> SearchOut:
+async def search_project(source_id: int, payload: SearchIn, session: SessionDep) -> SearchOut:
     try:
         response = await build_retrieval_usecase(session).search(
             source_id, payload.query, payload.index_types, payload.top_k
@@ -68,6 +68,9 @@ def _search_out(response: SearchResponse) -> SearchOut:
                 score=hit.score,
                 rerank_score=hit.rerank_score,
                 source_ref=hit.source_ref,
+                ticket_id=hit.ticket_id,
+                attachment_id=hit.attachment_id,
+                event_timestamp=hit.event_timestamp,
             )
             for hit in response.hits
         ],

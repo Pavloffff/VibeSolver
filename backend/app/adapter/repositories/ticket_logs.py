@@ -70,6 +70,21 @@ class TicketLogSqlRepository:
             return None
         return await self.get_attachment(int(row.source_id), int(row.ticket_id), int(row.id))
 
+    async def delete_attachment(
+        self, source_id: int, ticket_id: int, attachment_id: int
+    ) -> str | None:
+        result = await self._session.execute(
+            text(
+                "DELETE FROM ticket_log_attachments "
+                "WHERE source_id = :source_id AND ticket_id = :ticket_id AND id = :id "
+                "RETURNING storage_key"
+            ),
+            {"source_id": source_id, "ticket_id": ticket_id, "id": attachment_id},
+        )
+        storage_key = result.scalar_one_or_none()
+        await self._session.commit()
+        return str(storage_key) if storage_key is not None else None
+
 
 _ATTACHMENT_COLUMNS = (
     "SELECT id, source_id, ticket_id, filename, storage_key, size_bytes, status, error, "

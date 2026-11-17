@@ -17,6 +17,7 @@ import type {
   TicketBrief,
   TicketStats,
   TicketDetail,
+  TicketLogAttachment,
   WorkspaceModel,
 } from './types'
 
@@ -317,6 +318,34 @@ export class ApiClient {
 
   getTicket(ticketId: number): Promise<TicketDetail> {
     return this.request<TicketDetail>(`/api/v1/tickets/${ticketId}`)
+  }
+
+  listTicketLogAttachments(ticketId: number): Promise<TicketLogAttachment[]> {
+    return this.request<TicketLogAttachment[]>(`/api/v1/tickets/${ticketId}/log-attachments`)
+  }
+
+  uploadTicketLogAttachment(ticketId: number, file: File): Promise<TicketLogAttachment> {
+    const form = new FormData()
+    form.append('file', file)
+    return this.request<TicketLogAttachment>(`/api/v1/tickets/${ticketId}/log-attachments`, {
+      method: 'POST',
+      body: form,
+      headers: {},
+    })
+  }
+
+  retryTicketLogAttachment(ticketId: number, attachmentId: number): Promise<TicketLogAttachment> {
+    return this.request<TicketLogAttachment>(
+      `/api/v1/tickets/${ticketId}/log-attachments/${attachmentId}/retry`,
+      { method: 'POST' },
+    )
+  }
+
+  deleteTicketLogAttachment(ticketId: number, attachmentId: number): Promise<void> {
+    return this.request<void>(
+      `/api/v1/tickets/${ticketId}/log-attachments/${attachmentId}`,
+      { method: 'DELETE' },
+    )
   }
 
   runTicket(ticketId: number): Promise<TicketDetail> {

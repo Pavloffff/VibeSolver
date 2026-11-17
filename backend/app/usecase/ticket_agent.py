@@ -52,6 +52,16 @@ fragments. Cite the fragment IDs you relied on (for example S1, S3) in the sourc
 If the fragments are insufficient to answer reliably, choose escalate and explain in Russian
 what exactly is missing; never invent behavior that the fragments do not support.
 
+Compare the report with the documented expected user flow. A vague report or an action that
+matches the expected user flow is not by itself evidence of a product defect. Explain expected
+behavior respectfully and ask for the specific missing symptom or step; never mock or blame the
+user. Missing evidence does not prove that everything is working.
+
+Treat OOM-kill, disk exhaustion, low memory, container resource limits, and similar signals as
+possible operational causes. Report them as confirmed only when the evidence says so, and do not
+claim a code defect unless independent evidence supports it. Distinguish observed evidence from
+hypotheses and state uncertainty clearly.
+
 Return ONLY JSON with this exact schema:
 {"decision":"answer|escalate","answer":"<markdown answer in Russian, or null>",
 "escalate_reason":"<Russian reason, or null>","source_refs":["S1"]}"""
@@ -182,6 +192,10 @@ class TicketAgentUsecase:
             raise TicketNotFoundError(str(ticket_id))
         if ticket.status == "running":
             raise TicketConflictError(f"ticket {ticket_id} is already running")
+        if await self._tickets.has_unready_log_attachments(ticket_id):
+            raise TicketConflictError(
+                "retry or remove failed log archives and wait for processing attachments before running the issue"
+            )
         previous_status = ticket.status
         await self._tickets.update_result(ticket_id, "running")
         try:
@@ -305,12 +319,14 @@ class TicketAgentUsecase:
         started = time.monotonic()
         per_query = max(6, self._config.context_chunks // max(1, len(queries)))
         per_query_results: list[list[SearchHit]] = []
-        try:
-            for query in queries:
-                response = await self._retrieval.search(source_id, query, None, per_query)
+        for query in queries:
+            try:
+                response = await self._retrieval.search_ticket_context(
+                    source_id, ticket_id, query, per_query
+                )
                 per_query_results.append(list(response.hits))
-        except SearchUnavailableError:
-            return {}
+            except SearchUnavailableError:
+                per_query_results.append([])
         ordered = _interleave_deduped(per_query_results, self._config.context_chunks)
         dossier = {f"S{index + 1}": hit for index, hit in enumerate(ordered)}
         if dossier:
@@ -428,6 +444,9 @@ def _citation(hit: SearchHit) -> dict[str, Any]:
         "index_type": hit.index_type,
         "start_line": hit.start_line,
         "end_line": hit.end_line,
+        "ticket_id": hit.ticket_id,
+        "attachment_id": hit.attachment_id,
+        "event_timestamp": hit.event_timestamp,
     }
 
 

@@ -138,6 +138,7 @@ export interface TicketBrief {
   title: string
   status: string
   created_at: string | null
+  has_unready_log_attachments?: boolean
 }
 
 export interface TicketCitation {
@@ -177,6 +178,18 @@ export interface TicketStep {
 export interface TicketDetail {
   ticket: Ticket
   steps: TicketStep[]
+}
+
+export type TicketLogAttachmentStatus = 'queued' | 'processing' | 'ready' | 'failed'
+
+export interface TicketLogAttachment {
+  id: number
+  filename: string
+  size_bytes: number
+  status: TicketLogAttachmentStatus
+  error: string | null
+  created_at: string | null
+  updated_at: string | null
 }
 
 export interface OllamaPullProgress {

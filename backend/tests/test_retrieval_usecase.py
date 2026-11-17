@@ -10,6 +10,7 @@ from app.domain.repositories.retrieval import (
     RerankGateway,
     SearchUnavailableError,
 )
+from app.domain.repositories.ticket_log_search import RetrievedTicketLogChunk
 from app.usecase.retrieval import RetrievalUsecase
 
 
@@ -43,9 +44,7 @@ def _run_status(index_type: str, status: str, run_id: int | None) -> IndexRunSta
     )
 
 
-def _chunk(
-    chunk_id: int, index_type: str, path: str, content: str, score: float
-) -> RetrievedChunk:
+def _chunk(chunk_id: int, index_type: str, path: str, content: str, score: float) -> RetrievedChunk:
     return RetrievedChunk(
         chunk_id=chunk_id,
         index_type=index_type,
@@ -90,6 +89,36 @@ class FakeSearch:
             "documentation": [_chunk(6, "documentation", "flows.json", "lexical flow", 0.3)],
         }
         return rows.get(index_type, [])
+
+
+class FakeTicketLogSearch:
+    async def search_dense(
+        self,
+        source_id: int,
+        ticket_id: int,
+        embedding_model_id: int,
+        vector: list[float],
+        limit: int,
+    ) -> list[RetrievedTicketLogChunk]:
+        return [
+            RetrievedTicketLogChunk(
+                chunk_id=11,
+                attachment_id=4,
+                ticket_id=ticket_id,
+                path="logs/server.log",
+                start_line=12,
+                end_line=18,
+                event_timestamp="2026-11-17T01:02:03Z",
+                content="OOM killer terminated worker",
+                metadata={"encoding": "utf-8"},
+                score=0.9,
+            )
+        ]
+
+    async def search_lexical(
+        self, source_id: int, ticket_id: int, query: str, limit: int
+    ) -> list[RetrievedTicketLogChunk]:
+        return []
 
 
 class FakeModels:
@@ -185,9 +214,7 @@ async def test_search_fuses_dense_and_lexical_across_completed_indexes() -> None
 
 async def test_search_restricted_to_requested_index_types() -> None:
     usecase, search, _ = _usecase()
-    response = await usecase.search(
-        1, "документация", index_types=["documentation"], top_k=3
-    )
+    response = await usecase.search(1, "документация", index_types=["documentation"], top_k=3)
     assert search.dense_calls == [("documentation", 32)]
     assert [hit.path for hit in response.hits] == ["docs.md", "flows.json"]
 
@@ -196,6 +223,57 @@ async def test_search_unknown_project_raises_source_not_found() -> None:
     usecase, _, _ = _usecase(exists=False)
     with pytest.raises(SourceNotFoundError):
         await usecase.search(1, "query")
+
+
+async def test_ticket_log_search_returns_attachment_scoped_citation() -> None:
+    search = FakeSearch()
+    usecase = RetrievalUsecase(
+        sources=FakeSources(),
+        indexes=FakeIndexing([]),
+        search=search,
+        models=FakeModels(),
+        embed=fake_embed,
+        rerank=None,
+        request_timeout=5,
+        ticket_log_search=FakeTicketLogSearch(),
+    )
+
+    response = await usecase.search_ticket_logs(1, 71, "OOM kill", top_k=4)
+
+    assert [hit.path for hit in response.hits] == ["logs/server.log"]
+    assert response.hits[0].ticket_id == 71
+    assert response.hits[0].attachment_id == 4
+    assert response.hits[0].event_timestamp == "2026-11-17T01:02:03Z"
+    assert response.hits[0].source_ref.startswith("ticket:71:attachment:4:")
+
+
+async def test_ticket_context_embeds_once_and_combines_project_and_ticket_logs() -> None:
+    search = FakeSearch()
+    embed_calls: list[list[str]] = []
+
+    def counted_embed(
+        credentials: ProviderCredentials, model_id: str, queries: list[str], timeout: int
+    ) -> list[list[float]]:
+        embed_calls.append(queries)
+        return fake_embed(credentials, model_id, queries, timeout)
+
+    usecase = RetrievalUsecase(
+        sources=FakeSources(),
+        indexes=FakeIndexing(_statuses()),
+        search=search,
+        models=FakeModels(),
+        embed=counted_embed,
+        rerank=None,
+        request_timeout=5,
+        ticket_log_search=FakeTicketLogSearch(),
+    )
+
+    response = await usecase.search_ticket_context(1, 71, "OOM kill", top_k=5)
+
+    assert len(embed_calls) == 1
+    assert {hit.path for hit in response.hits} >= {"code_a.py", "logs/server.log"}
+    assert response.hits[0].source_ref.startswith("run:")
+    assert any(hit.source_ref.startswith("ticket:71:attachment:4:") for hit in response.hits)
 
 
 async def test_search_without_completed_indexes_raises_unavailable() -> None:

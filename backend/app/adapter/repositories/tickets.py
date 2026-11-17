@@ -34,6 +34,16 @@ class TicketSqlRepository:
         row = rows.one_or_none()
         return _to_ticket(row) if row is not None else None
 
+    async def has_unready_log_attachments(self, ticket_id: int) -> bool:
+        result = await self._session.execute(
+            text(
+                "SELECT EXISTS (SELECT 1 FROM ticket_log_attachments "
+                "WHERE ticket_id = :ticket_id AND status <> 'ready')"
+            ),
+            {"ticket_id": ticket_id},
+        )
+        return bool(result.scalar_one())
+
     async def list_for_source(self, source_id: int) -> list[Ticket]:
         rows = await self._session.execute(
             text(_TICKET_COLUMNS + " WHERE ticket.source_id = :source_id ORDER BY ticket.id DESC"),
@@ -199,7 +209,11 @@ class TicketSqlRepository:
 _TICKET_COLUMNS = (
     "SELECT ticket.id, ticket.source_id, ticket.title, ticket.description, ticket.status, "
     "ticket.triage_json, ticket.answer, ticket.escalate_reason, ticket.citations_json, "
-    "ticket.created_at, ticket.updated_at FROM tickets AS ticket"
+    "ticket.created_at, ticket.updated_at, "
+    "EXISTS (SELECT 1 FROM ticket_log_attachments AS attachment "
+    "WHERE attachment.source_id = ticket.source_id AND attachment.ticket_id = ticket.id "
+    "AND attachment.status <> 'ready') AS has_unready_log_attachments "
+    "FROM tickets AS ticket"
 )
 
 
@@ -216,6 +230,7 @@ def _to_ticket(row: Any) -> Ticket:
         citations=row.citations_json if isinstance(row.citations_json, list) else None,
         created_at=row.created_at if isinstance(row.created_at, datetime) else None,
         updated_at=row.updated_at if isinstance(row.updated_at, datetime) else None,
+        has_unready_log_attachments=bool(row.has_unready_log_attachments),
     )
 
 

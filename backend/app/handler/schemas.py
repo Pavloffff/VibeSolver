@@ -60,6 +60,9 @@ class SearchHitOut(BaseModel):
     score: float
     rerank_score: float | None = None
     source_ref: str
+    ticket_id: int | None = None
+    attachment_id: int | None = None
+    event_timestamp: str | None = None
 
 
 class SearchMetaOut(BaseModel):
@@ -209,6 +212,9 @@ class TicketCitationOut(BaseModel):
     index_type: str
     start_line: int | None = None
     end_line: int | None = None
+    ticket_id: int | None = None
+    attachment_id: int | None = None
+    event_timestamp: str | None = None
 
 
 class TicketBriefOut(BaseModel):
@@ -216,6 +222,7 @@ class TicketBriefOut(BaseModel):
     title: str
     status: str
     created_at: str | None = None
+    has_unready_log_attachments: bool = False
 
 
 class TicketStatsOut(BaseModel):
@@ -228,6 +235,16 @@ class TicketStatsOut(BaseModel):
     cost_usd: float | None
     avg_cost_usd: float | None
     avg_tokens_per_ticket: float
+
+
+class TicketLogAttachmentOut(BaseModel):
+    id: int
+    filename: str
+    size_bytes: int
+    status: str
+    error: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class TicketOut(BaseModel):

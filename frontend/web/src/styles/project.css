@@ -164,6 +164,18 @@
 .issues-escalation { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: var(--surface); }
 .issues-trace pre { background: var(--surface-muted); border-radius: 6px; padding: 8px 10px; overflow: auto; font-size: 11px; margin: 6px 0 10px; }
 .issues-trace ol { margin: 6px 0 0; padding-left: 18px; }
+.issues-log-attachments { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.issues-log-attachments > .project-card-heading { margin-bottom: 10px; }
+.issues-log-attachments .issues-log-upload { display: inline-flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
+.issues-log-attachments .issues-log-upload input { font-weight: 400; }
+.issues-log-list { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+.issues-log-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.issues-log-info, .issues-log-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.issues-log-info { min-width: 0; }
+.issues-log-info strong { overflow-wrap: anywhere; }
+.issues-log-info > span:not(.badge) { color: var(--text-muted); font-size: 12px; }
+.issues-log-info .error { color: var(--danger); }
 @media (max-width: 760px) {
   .issues-model-pickers { min-width: 0; grid-template-columns: 1fr; }
+  .issues-log-row { align-items: flex-start; flex-direction: column; }
 }

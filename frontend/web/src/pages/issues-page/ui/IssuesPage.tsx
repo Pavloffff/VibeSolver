@@ -6,6 +6,7 @@ import type { ProjectModelSelections, TicketBrief, TicketDetail, TicketStats, Wo
 import { useT } from '../../../shared/i18n'
 import type { TranslationKey } from '../../../shared/i18n'
 import { parseTicketText } from '../../../features/issues'
+import TicketLogAttachments from '../../../features/ticket-log-attachments'
 
 interface Props {
   projectId: number
@@ -33,6 +34,11 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [blockedLogTickets, setBlockedLogTickets] = useState<Record<number, boolean>>({})
+
+  const updateLogBlocked = useCallback((ticketId: number, blocked: boolean) => {
+    setBlockedLogTickets((current) => ({ ...current, [ticketId]: blocked }))
+  }, [])
 
   const refreshTickets = useCallback(async () => {
     setTickets(await api.listTickets(projectId))
@@ -114,6 +120,14 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
     setError(null)
     setNotice(null)
     try {
+      const attachments = await api.listTicketLogAttachments(ticketId)
+      const hasUnreadyLogs = attachments.some((item) => item.status !== 'ready')
+      updateLogBlocked(ticketId, hasUnreadyLogs)
+      if (hasUnreadyLogs) {
+        setSelected(await api.getTicket(ticketId))
+        setError(t('issues.logsNotReady'))
+        return
+      }
       const detail = await api.runTicket(ticketId)
       setSelected(detail)
       await Promise.all([refreshTickets(), api.getTicketStats(projectId).then(setStats)])
@@ -134,7 +148,8 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
     }
   }
 
-  const canRun = (status: string) => status !== 'running'
+  const canRun = (ticketId: number, status: string, hasUnreadyLogs?: boolean) =>
+    status !== 'running' && hasUnreadyLogs !== true && blockedLogTickets[ticketId] !== true
   const modelPicker = (label: string, role: 'ticket_triage' | 'ticket_resolution' | 'ticket_resolution_cheap', modelId: number | null | undefined) => (
     <label className="generation-model-picker" key={role}>{label}
       <select
@@ -205,7 +220,7 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={busy !== null || !canRun(ticket.status)}
+                  disabled={busy !== null || !canRun(ticket.id, ticket.status, ticket.has_unready_log_attachments)}
                   onClick={() => void runTicket(ticket.id)}
                 >
                   {busy === `run-${ticket.id}` ? t('issues.running') : ticket.status === 'new' ? t('issues.run') : t('issues.rerun')}
@@ -270,6 +285,12 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
               )}
             </div>
           )}
+
+          <TicketLogAttachments
+            ticketId={selected.ticket.id}
+            api={api}
+            onUnreadyChange={updateLogBlocked}
+          />
 
           <details className="issues-trace">
             <summary>{t('issues.trace')}</summary>

@@ -19,3 +19,7 @@ class TicketLogRepository(Protocol):
     async def update_status(
         self, attachment_id: int, status: str, error: str | None
     ) -> TicketLogAttachment | None: ...
+
+    async def delete_attachment(
+        self, source_id: int, ticket_id: int, attachment_id: int
+    ) -> str | None: ...
