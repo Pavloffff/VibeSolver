@@ -307,6 +307,19 @@ async def test_create_ticket_unknown_project() -> None:
         await usecase.create_ticket(1, "t", "d")
 
 
+def test_ticket_agent_uses_compiled_langgraph_with_explicit_routes() -> None:
+    usecase = _usecase(FakeTickets(), FakeGateway([]))
+
+    graph = usecase._graph.get_graph()
+
+    assert {"resolve_models", "triage", "investigate", "resolve", "answer"}.issubset(
+        graph.nodes
+    )
+    assert {"escalate_empty", "escalate_invalid_refs", "escalate_model"}.issubset(
+        graph.nodes
+    )
+
+
 async def test_run_answers_with_valid_citations() -> None:
     tickets = FakeTickets()
     gateway = FakeGateway([TRIAGE_JSON, ANSWER_JSON])

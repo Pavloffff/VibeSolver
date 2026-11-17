@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     ticket_agent_max_output_tokens: int = 8192
     ticket_context_chunks: int = 12
     ticket_max_context_characters: int = 24_000
+    experimental_sandbox_enabled: bool = False
+    experimental_sandbox_image: str = ""
+    experimental_sandbox_cpus: float = 1.0
+    experimental_sandbox_memory_mb: int = 512
+    experimental_sandbox_pids_limit: int = 128
+    experimental_sandbox_timeout_seconds: int = 60
+    experimental_sandbox_workspace_mb: int = 512
+    experimental_sandbox_max_output_bytes: int = 65_536
     freetoken_api_url: str = "http://host.docker.internal:1920/v1"
     ollama_api_url: str = "http://host.docker.internal:11434"
     openrouter_api_url: str = "https://openrouter.ai/api/v1"

@@ -19,6 +19,7 @@ dependencies = [
     "boto3==1.43.123",
     "dulwich==1.2.20",
     "python-multipart==0.0.31",
+    "langgraph==1.2.22",
 ]
 
 [dependency-groups]
