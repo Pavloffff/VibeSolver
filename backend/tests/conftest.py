@@ -1,67 +1,35 @@
-"""Test infrastructure for VibeSolver backend API tests.
-
-Database strategy: tests run against a real Postgres instance discovered at
-session start. Resolution order:
-1. VIBESOLVER_DATABASE_URL environment variable (host, port, db, credentials).
-2. postgresql://vibesolver:vibesolver@localhost:5433/vibesolver
-3. postgresql://vibesolver:vibesolver@localhost:5432/vibesolver
-
-If none of the candidates is reachable, all database-backed tests are skipped
-with the reason "postgres not reachable". Schema (sources, imports,
-imported_files) must be applied via goose migrations beforehand.
-Each test starts from empty tables: the clean_database fixture truncates
-sources CASCADE, which cascades to imports and imported_files.
-"""
-
 import asyncio
 import json
 import os
 import sys
 from collections.abc import AsyncGenerator
 
-import psycopg
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
 
+from app.adapter.db import get_session, to_async_dsn
 from app.handler.app import create_app
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-FALLBACK_TEST_DATABASE_DSNS: tuple[str, ...] = (
-    "postgresql://vibesolver:vibesolver@localhost:5433/vibesolver",
-    "postgresql://vibesolver:vibesolver@localhost:5432/vibesolver",
-)
-
 API_BASE_URL = "http://test"
-
-
-def is_dsn_reachable(dsn: str) -> bool:
-    try:
-        with psycopg.connect(dsn, connect_timeout=2):
-            return True
-    except psycopg.Error:
-        return False
 
 
 @pytest.fixture(scope="session")
 def test_database_dsn() -> str:
-    candidates: list[str] = []
-    env_dsn = os.environ.get("VIBESOLVER_DATABASE_URL")
-    if env_dsn:
-        candidates.append(env_dsn)
-    candidates.extend(FALLBACK_TEST_DATABASE_DSNS)
-    for dsn in candidates:
-        if is_dsn_reachable(dsn):
-            return dsn
-    pytest.skip("postgres not reachable")
-
-
-def to_async_dsn(dsn: str) -> str:
-    return dsn.replace("postgresql://", "postgresql+psycopg_async://", 1)
+    dsn = os.environ.get("VIBESOLVER_TEST_DATABASE_URL")
+    if not dsn:
+        pytest.skip("set VIBESOLVER_TEST_DATABASE_URL to a disposable migrated database")
+    return dsn
 
 
 @pytest.fixture
@@ -72,14 +40,25 @@ async def db_engine(test_database_dsn: str) -> AsyncGenerator[AsyncEngine, None]
 
 
 @pytest.fixture
-async def clean_database(db_engine: AsyncEngine) -> AsyncGenerator[None, None]:
+async def clean_database(db_engine: AsyncEngine) -> None:
     async with db_engine.begin() as connection:
         await connection.execute(text("TRUNCATE TABLE sources CASCADE"))
 
 
 @pytest.fixture
-async def api_client() -> AsyncGenerator[AsyncClient, None]:
+async def api_client(request: pytest.FixtureRequest) -> AsyncGenerator[AsyncClient, None]:
     app = create_app()
+
+    async def test_session() -> AsyncGenerator[AsyncSession, None]:
+        dsn = request.getfixturevalue("test_database_dsn")
+        engine = create_async_engine(to_async_dsn(dsn), poolclass=NullPool)
+        try:
+            async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+                yield session
+        finally:
+            await engine.dispose()
+
+    app.dependency_overrides[get_session] = test_session
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url=API_BASE_URL) as client:
         yield client
