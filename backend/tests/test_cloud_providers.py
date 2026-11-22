@@ -219,6 +219,20 @@ def test_anthropic_chat_completion_rejects_empty_response(
         )
 
 
+def test_freetoken_empty_completion_keeps_usage_for_structured_retry(monkeypatch) -> None:
+    monkeypatch.setattr(
+        providers,
+        "_request_json",
+        lambda *args: {
+            "choices": [{"message": {"content": ""}}],
+            "usage": {"prompt_tokens": 60, "completion_tokens": 30},
+        },
+    )
+    text, usage = providers.complete_json_with_usage("freetoken", "http://test", "oss", "", "", 5)
+    assert text == ""
+    assert usage == {"input_tokens": 60, "output_tokens": 30}
+
+
 def test_openai_lists_chat_models_only(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_request_json(
         url: str,

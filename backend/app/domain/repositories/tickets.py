@@ -12,6 +12,8 @@ class TicketRepository(Protocol):
 
     async def list_for_source(self, source_id: int) -> list[Ticket]: ...
 
+    async def transition_status(self, ticket_id: int, expected: str, status: str) -> bool: ...
+
     async def update_result(
         self,
         ticket_id: int,

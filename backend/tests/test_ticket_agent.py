@@ -24,6 +24,8 @@ from app.usecase.ticket_agent import (
     TicketAgentUnavailableError,
     TicketAgentUsecase,
     TriageResult,
+    _format_dossier,
+    _interleave_deduped,
     resolver_target,
 )
 
@@ -87,6 +89,13 @@ class FakeTickets:
 
     async def list_for_source(self, source_id: int) -> list[Ticket]:
         return [item for item in self.tickets.values() if item.source_id == source_id]
+
+    async def transition_status(self, ticket_id: int, expected: str, status: str) -> bool:
+        ticket = self.tickets[ticket_id]
+        if ticket.status != expected:
+            return False
+        ticket.status = status
+        return True
 
     async def update_result(self, ticket_id: int, status: str, **kwargs: Any) -> Ticket | None:
         ticket = self.tickets[ticket_id]
@@ -478,6 +487,11 @@ async def test_run_escalates_when_refs_invalid() -> None:
     assert "не сослалась" in (result.escalate_reason or "")
 
 
+def test_deduplication_continues_past_a_fully_repeated_rank() -> None:
+    a, b, c = (_hit(n) for n in range(3))
+    assert _interleave_deduped([[a, b, c], [b, a]], 3) == [a, b, c]
+
+
 async def test_run_conflict_while_running() -> None:
     tickets = FakeTickets()
     usecase = _usecase(tickets, FakeGateway([]))
@@ -497,6 +511,20 @@ async def test_run_without_model_restores_status() -> None:
 
     assert tickets.tickets[ticket.id].status == "new"
     assert tickets.steps == []
+
+
+async def test_rerun_without_model_preserves_previous_answer_and_sources() -> None:
+    tickets = FakeTickets()
+    usecase = _usecase(tickets, FakeGateway([]), models=FakeModels(selection=None))
+    ticket = await usecase.create_ticket(1, "t", "d")
+    await tickets.update_result(ticket.id, "answered", answer="Saved", citations=[{"path": "a.py"}])
+
+    with pytest.raises(TicketAgentUnavailableError):
+        await usecase.run(ticket.id)
+
+    assert ticket.status == "answered"
+    assert ticket.answer == "Saved"
+    assert ticket.citations == [{"path": "a.py"}]
 
 
 async def test_run_provider_failure_marks_failed() -> None:
@@ -524,6 +552,13 @@ async def test_repair_retry_recovers_invalid_json() -> None:
 
     assert result.status == "answered"
     assert len(gateway.calls) == 3
+    assert gateway.calls[0] == gateway.calls[1]
+
+
+def test_dossier_counts_separators_and_truncates_oversized_first_source() -> None:
+    text, visible = _format_dossier({"S1": _hit(1), "S2": _hit(2)}, 36)
+    assert 0 < len(text) <= 36
+    assert visible == ["S1"]
 
 
 async def test_repair_usage_is_added_to_step_totals() -> None:

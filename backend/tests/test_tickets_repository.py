@@ -1,3 +1,5 @@
+import asyncio
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -82,6 +84,19 @@ async def test_ticket_roundtrip_and_append_only_steps(db_engine, clean_database:
         listed = await repository.list_for_source(source_id)
         assert [item.id for item in listed] == [ticket.id]
         assert await repository.get(ticket.id) is not None
+
+
+async def test_concurrent_run_claims_have_one_winner(db_engine, clean_database: None) -> None:
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    source_id = await _source_id(db_engine)
+    async with factory() as session:
+        ticket = await TicketSqlRepository(session).create(source_id, "title", "description")
+
+    async def claim() -> bool:
+        async with factory() as session:
+            return await TicketSqlRepository(session).transition_status(ticket.id, "new", "running")
+
+    assert sorted(await asyncio.gather(claim(), claim())) == [False, True]
 
 
 async def test_ticket_stats_empty_source(db_engine, clean_database: None) -> None:

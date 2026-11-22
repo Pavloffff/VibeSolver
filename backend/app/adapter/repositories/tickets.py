@@ -51,6 +51,18 @@ class TicketSqlRepository:
         )
         return [_to_ticket(row) for row in rows.all()]
 
+    async def transition_status(self, ticket_id: int, expected: str, status: str) -> bool:
+        result = await self._session.execute(
+            text(
+                "UPDATE tickets SET status = :status, updated_at = now() "
+                "WHERE id = :ticket_id AND status = :expected RETURNING id"
+            ),
+            {"ticket_id": ticket_id, "expected": expected, "status": status},
+        )
+        changed = result.scalar_one_or_none() is not None
+        await self._session.commit()
+        return changed
+
     async def update_result(
         self,
         ticket_id: int,

@@ -11,7 +11,13 @@ from app.domain.repositories.retrieval import (
     SearchUnavailableError,
 )
 from app.domain.repositories.ticket_log_search import RetrievedTicketLogChunk
-from app.usecase.retrieval import RetrievalUsecase
+from app.usecase.retrieval import RetrievalUsecase, rank_with_rrf
+
+
+def test_rrf_ranks_each_modality_across_indexes_before_fusion() -> None:
+    code = _chunk(1, "code", "a.cpp", "unrelated", 0.1)
+    doc = _chunk(2, "documentation", "guide.md", "exact match", 0.9)
+    assert rank_with_rrf([code, doc], [code, doc])[0][0] == doc
 
 
 class FakeSources:

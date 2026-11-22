@@ -50,6 +50,8 @@ documentation and user flows.
 
 Answer the ticket in Russian, concretely and helpfully, using ONLY facts supported by the
 fragments. Cite the fragment IDs you relied on (for example S1, S3) in the source_refs field.
+Use the field names from the external request or response schema verbatim. Prefer the documented
+user workflow for how-to questions. Only propose implementation changes when the ticket asks for them.
 If the fragments are insufficient to answer reliably, choose escalate and explain in Russian
 what exactly is missing; never invent behavior that the fragments do not support.
 
@@ -217,7 +219,8 @@ class TicketAgentUsecase:
                 "retry or remove failed log archives and wait for processing attachments before running the issue"
             )
         previous_status = ticket.status
-        await self._tickets.update_result(ticket_id, "running")
+        if not await self._tickets.transition_status(ticket_id, previous_status, "running"):
+            raise TicketConflictError(f"ticket {ticket_id} changed before the run could start")
         try:
             await self._graph.ainvoke(
                 {
@@ -237,7 +240,7 @@ class TicketAgentUsecase:
                 raise TicketNotFoundError(str(ticket_id))
             return updated
         except (TicketAgentUnavailableError, SourceNotFoundError):
-            await self._tickets.update_result(ticket_id, previous_status)
+            await self._tickets.transition_status(ticket_id, "running", previous_status)
             raise
         except Exception as exc:
             await self._tickets.update_result(ticket_id, "failed", escalate_reason=str(exc)[:500])
@@ -485,10 +488,11 @@ class TicketAgentUsecase:
         routing_reason: str,
     ) -> ResolutionResult:
         started = time.monotonic()
+        evidence, visible_refs = _format_dossier(dossier, self._config.max_context_characters)
         prompt = (
             f"Ticket title: {ticket.title}\n\nTicket description:\n{ticket.description}\n\n"
             f"Triage summary: {triage.summary}\n\nEvidence fragments:\n"
-            + _format_dossier(dossier, self._config.max_context_characters)
+            + evidence
         )
         resolution, usage = await _generate_parsed(
             self._gateway,
@@ -498,7 +502,7 @@ class TicketAgentUsecase:
             ResolutionResult,
             self._config,
         )
-        valid = _unique([ref for ref in resolution.source_refs if ref in dossier])
+        valid = _unique([ref for ref in resolution.source_refs if ref in visible_refs])
         routing = {
             "complexity": triage.complexity,
             "tier": tier,
@@ -507,7 +511,7 @@ class TicketAgentUsecase:
         await self._tickets.add_step(
             ticket.id,
             "resolve",
-            {"fragments": list(dossier), "decision": resolution.decision},
+            {"fragments": visible_refs, "decision": resolution.decision},
             {**resolution.model_dump(), "source_refs": valid, "routing": routing},
             model_id=target.model.id,
             duration_ms=_elapsed_ms(started),
@@ -515,7 +519,7 @@ class TicketAgentUsecase:
             tokens_out=usage.output_tokens,
             cost_usd=step_cost_usd(target.pricing, usage.input_tokens, usage.output_tokens),
         )
-        return resolution
+        return resolution.model_copy(update={"source_refs": valid})
 
     async def _escalate(
         self,
@@ -548,10 +552,10 @@ class TicketAgentUsecase:
 def _interleave_deduped(per_query_results: list[list[SearchHit]], limit: int) -> list[SearchHit]:
     seen: set[str] = set()
     ordered: list[SearchHit] = []
-    position = 0
-    while len(ordered) < limit:
-        added = False
+    for position in range(max((len(results) for results in per_query_results), default=0)):
         for results in per_query_results:
+            if len(ordered) >= limit:
+                return ordered
             if position >= len(results):
                 continue
             hit = results[position]
@@ -559,12 +563,6 @@ def _interleave_deduped(per_query_results: list[list[SearchHit]], limit: int) ->
                 continue
             seen.add(hit.source_ref)
             ordered.append(hit)
-            added = True
-            if len(ordered) >= limit:
-                break
-        if not added:
-            break
-        position += 1
     return ordered
 
 
@@ -581,19 +579,23 @@ def _citation(hit: SearchHit) -> dict[str, Any]:
     }
 
 
-def _format_dossier(dossier: dict[str, SearchHit], max_characters: int) -> str:
+def _format_dossier(dossier: dict[str, SearchHit], max_characters: int) -> tuple[str, list[str]]:
     parts: list[str] = []
-    used = 0
+    visible: list[str] = []
+    remaining = max_characters
     for ref, hit in dossier.items():
         location = hit.path + (
             f":{hit.start_line}-{hit.end_line}" if hit.start_line is not None else ""
         )
-        fragment = f"[{ref}] {location}\n{hit.content}\n"
-        if used + len(fragment) > max_characters and parts:
+        header = f"[{ref}] {location}\n"
+        available = remaining - len(header)
+        if available <= 0:
             break
+        fragment = header + hit.content[:available]
         parts.append(fragment)
-        used += len(fragment)
-    return "\n".join(parts)
+        visible.append(ref)
+        remaining -= len(fragment) + 2
+    return "\n\n".join(parts), visible
 
 
 def _elapsed_ms(started: float) -> int:
@@ -639,9 +641,10 @@ async def _generate_parsed[TSchema: BaseModel](
             gateway.generate_json_with_usage,
             target.credentials,
             target.model.provider_model_id,
-            "Convert the supplied model response into valid JSON of the required schema. "
-            "Keep the same useful content. Return JSON only without Markdown fences.",
-            f"Response to repair:\n{generated.text[:8000]}",
+            system_prompt,
+            f"{user_prompt}\n\nThe previous response failed schema validation. "
+            "Answer the original request using the supplied evidence and required JSON schema.\n"
+            f"Previous response:\n{generated.text[:8000]}",
             config.timeout_seconds,
             config.max_output_tokens,
         )

@@ -33,7 +33,8 @@ def rank_with_rrf(
     scores: dict[tuple[str, int], float] = {}
     chunks: dict[tuple[str, int], RetrievedChunk] = {}
     for results in (dense, lexical):
-        for rank, chunk in enumerate(results, start=1):
+        ordered = sorted(results, key=lambda chunk: chunk.score, reverse=True)
+        for rank, chunk in enumerate(ordered, start=1):
             key = (chunk.index_type, chunk.chunk_id)
             chunks[key] = chunk
             scores[key] = scores.get(key, 0.0) + 1.0 / (RRF_K + rank)
