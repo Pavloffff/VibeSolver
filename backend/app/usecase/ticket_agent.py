@@ -3,8 +3,9 @@ import json
 import time
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, TypedDict
 
+from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from app.domain.entities import SourceNotFoundError
@@ -21,6 +22,7 @@ from app.domain.tickets import (
     Ticket,
     TicketConflictError,
     TicketNotFoundError,
+    TicketStats,
     TicketStep,
 )
 from app.usecase.retrieval import RetrievalUsecase
@@ -48,8 +50,20 @@ documentation and user flows.
 
 Answer the ticket in Russian, concretely and helpfully, using ONLY facts supported by the
 fragments. Cite the fragment IDs you relied on (for example S1, S3) in the source_refs field.
+Use the field names from the external request or response schema verbatim. Prefer the documented
+user workflow for how-to questions. Only propose implementation changes when the ticket asks for them.
 If the fragments are insufficient to answer reliably, choose escalate and explain in Russian
 what exactly is missing; never invent behavior that the fragments do not support.
+
+Compare the report with the documented expected user flow. A vague report or an action that
+matches the expected user flow is not by itself evidence of a product defect. Explain expected
+behavior respectfully and ask for the specific missing symptom or step; never mock or blame the
+user. Missing evidence does not prove that everything is working.
+
+Treat OOM-kill, disk exhaustion, low memory, container resource limits, and similar signals as
+possible operational causes. Report them as confirmed only when the evidence says so, and do not
+claim a code defect unless independent evidence supports it. Distinguish observed evidence from
+hypotheses and state uncertainty clearly.
 
 Return ONLY JSON with this exact schema:
 {"decision":"answer|escalate","answer":"<markdown answer in Russian, or null>",
@@ -129,6 +143,24 @@ class ModelTarget:
     pricing: "tuple[Decimal, Decimal] | None"
 
 
+@dataclass(frozen=True, slots=True)
+class PipelineTargets:
+    triage: ModelTarget
+    strong: ModelTarget
+    cheap: ModelTarget | None
+
+
+class TicketGraphState(TypedDict):
+    ticket: Ticket
+    targets: PipelineTargets | None
+    triage: TriageResult | None
+    dossier: dict[str, SearchHit]
+    resolution: ResolutionResult | None
+    valid_refs: list[str]
+    tier: str
+    routing_reason: str
+
+
 class TicketAgentUnavailableError(ValueError):
     pass
 
@@ -153,6 +185,7 @@ class TicketAgentUsecase:
         self._retrieval = retrieval
         self._gateway = gateway
         self._config = config
+        self._graph = self._build_graph()
 
     async def create_ticket(self, source_id: int, title: str, description: str) -> Ticket:
         if await self._sources.get_any(source_id) is None:
@@ -163,6 +196,11 @@ class TicketAgentUsecase:
         if await self._sources.get_any(source_id) is None:
             raise SourceNotFoundError(f"project not found: {source_id}")
         return await self._tickets.list_for_source(source_id)
+
+    async def ticket_stats(self, source_id: int) -> TicketStats:
+        if await self._sources.get_any(source_id) is None:
+            raise SourceNotFoundError(f"project not found: {source_id}")
+        return await self._tickets.stats(source_id)
 
     async def ticket_details(self, ticket_id: int) -> tuple[Ticket, list[TicketStep]]:
         ticket = await self._tickets.get(ticket_id)
@@ -176,56 +214,178 @@ class TicketAgentUsecase:
             raise TicketNotFoundError(str(ticket_id))
         if ticket.status == "running":
             raise TicketConflictError(f"ticket {ticket_id} is already running")
+        if await self._tickets.has_unready_log_attachments(ticket_id):
+            raise TicketConflictError(
+                "retry or remove failed log archives and wait for processing attachments before running the issue"
+            )
         previous_status = ticket.status
-        await self._tickets.update_result(ticket_id, "running")
+        if not await self._tickets.transition_status(ticket_id, previous_status, "running"):
+            raise TicketConflictError(f"ticket {ticket_id} changed before the run could start")
         try:
-            targets = await self._resolve_models(ticket.source_id)
-            triage = await self._run_triage(ticket, targets.triage)
-            dossier = await self._build_dossier(
-                ticket.id, ticket.source_id, triage.search_queries
+            await self._graph.ainvoke(
+                {
+                    "ticket": ticket,
+                    "targets": None,
+                    "triage": None,
+                    "dossier": {},
+                    "resolution": None,
+                    "valid_refs": [],
+                    "tier": "",
+                    "routing_reason": "",
+                },
+                config={"recursion_limit": 12},
             )
-            if not dossier:
-                return await self._escalate(
-                    ticket_id,
-                    "в индексах проекта нет релевантного контента по обращению",
-                    triage,
-                    dossier,
-                    skipped_llm=True,
-                )
-            resolver = resolver_target(triage, targets)
-            resolution = await self._run_resolver(ticket, resolver, dossier, triage)
-            valid_refs = _unique([ref for ref in resolution.source_refs if ref in dossier])
-            if resolution.decision == "answer" and not valid_refs:
-                return await self._escalate(
-                    ticket_id,
-                    "модель не сослалась на найденные фрагменты контекста",
-                    triage,
-                    dossier,
-                )
-            if resolution.decision == "escalate":
-                return await self._escalate(
-                    ticket_id,
-                    resolution.escalate_reason or "недостаточно данных для ответа",
-                    triage,
-                    dossier,
-                )
-            updated = await self._tickets.update_result(
-                ticket_id,
-                "answered",
-                triage=triage.model_dump(),
-                answer=resolution.answer,
-                citations=[_citation(dossier[ref]) for ref in valid_refs],
-            )
-            assert updated is not None
+            updated = await self._tickets.get(ticket_id)
+            if updated is None:
+                raise TicketNotFoundError(str(ticket_id))
             return updated
         except (TicketAgentUnavailableError, SourceNotFoundError):
-            await self._tickets.update_result(ticket_id, previous_status)
+            await self._tickets.transition_status(ticket_id, "running", previous_status)
             raise
         except Exception as exc:
-            await self._tickets.update_result(
-                ticket_id, "failed", escalate_reason=str(exc)[:500]
-            )
+            await self._tickets.update_result(ticket_id, "failed", escalate_reason=str(exc)[:500])
             raise
+
+    def _build_graph(self) -> Any:
+        graph = StateGraph(TicketGraphState)
+        graph.add_node("resolve_models", self._graph_resolve_models)
+        graph.add_node("triage", self._graph_triage)
+        graph.add_node("investigate", self._graph_investigate)
+        graph.add_node("resolve", self._graph_resolve)
+        graph.add_node("answer", self._graph_answer)
+        graph.add_node("escalate_empty", self._graph_escalate_empty)
+        graph.add_node("escalate_invalid_refs", self._graph_escalate_invalid_refs)
+        graph.add_node("escalate_model", self._graph_escalate_model)
+        graph.add_edge(START, "resolve_models")
+        graph.add_edge("resolve_models", "triage")
+        graph.add_edge("triage", "investigate")
+        graph.add_conditional_edges(
+            "investigate",
+            self._route_after_investigation,
+            {"empty": "escalate_empty", "ready": "resolve"},
+        )
+        graph.add_conditional_edges(
+            "resolve",
+            self._route_after_resolution,
+            {
+                "answer": "answer",
+                "invalid_refs": "escalate_invalid_refs",
+                "escalate": "escalate_model",
+            },
+        )
+        for node in ("answer", "escalate_empty", "escalate_invalid_refs", "escalate_model"):
+            graph.add_edge(node, END)
+        return graph.compile()
+
+    async def _graph_resolve_models(self, state: TicketGraphState) -> dict[str, Any]:
+        return {"targets": await self._resolve_models(state["ticket"].source_id)}
+
+    async def _graph_triage(self, state: TicketGraphState) -> dict[str, Any]:
+        targets = state["targets"]
+        if targets is None:
+            raise RuntimeError("ticket graph has no model targets")
+        return {"triage": await self._run_triage(state["ticket"], targets.triage)}
+
+    async def _graph_investigate(self, state: TicketGraphState) -> dict[str, Any]:
+        triage = state["triage"]
+        if triage is None:
+            raise RuntimeError("ticket graph has no triage result")
+        dossier = await self._build_dossier(
+            state["ticket"].id, state["ticket"].source_id, triage.search_queries
+        )
+        return {"dossier": dossier}
+
+    @staticmethod
+    def _route_after_investigation(state: TicketGraphState) -> str:
+        return "ready" if state["dossier"] else "empty"
+
+    async def _graph_resolve(self, state: TicketGraphState) -> dict[str, Any]:
+        targets, triage = state["targets"], state["triage"]
+        if targets is None or triage is None:
+            raise RuntimeError("ticket graph is missing resolver inputs")
+        resolver = resolver_target(triage, targets)
+        tier = "cheap" if resolver is targets.cheap else "strong"
+        routing_reason = (
+            "simple ticket routed to the configured low-cost model"
+            if tier == "cheap"
+            else "standard or hard ticket routed to the strong model"
+            if triage.complexity != "simple"
+            else "no low-cost model is configured; using the strong model"
+        )
+        resolution = await self._run_resolver(
+            state["ticket"],
+            resolver,
+            state["dossier"],
+            triage,
+            tier=tier,
+            routing_reason=routing_reason,
+        )
+        valid_refs = _unique([ref for ref in resolution.source_refs if ref in state["dossier"]])
+        return {
+            "resolution": resolution,
+            "valid_refs": valid_refs,
+            "tier": tier,
+            "routing_reason": routing_reason,
+        }
+
+    @staticmethod
+    def _route_after_resolution(state: TicketGraphState) -> str:
+        resolution = state["resolution"]
+        if resolution is None:
+            raise RuntimeError("ticket graph has no resolution result")
+        if resolution.decision == "escalate":
+            return "escalate"
+        return "answer" if state["valid_refs"] else "invalid_refs"
+
+    async def _graph_answer(self, state: TicketGraphState) -> dict[str, Any]:
+        triage, resolution = state["triage"], state["resolution"]
+        if triage is None or resolution is None:
+            raise RuntimeError("ticket graph cannot finalize an incomplete answer")
+        await self._tickets.update_result(
+            state["ticket"].id,
+            "answered",
+            triage=triage.model_dump(),
+            answer=resolution.answer,
+            citations=[_citation(state["dossier"][ref]) for ref in state["valid_refs"]],
+        )
+        return {}
+
+    async def _graph_escalate_empty(self, state: TicketGraphState) -> dict[str, Any]:
+        triage = state["triage"]
+        if triage is None:
+            raise RuntimeError("ticket graph cannot escalate without triage")
+        await self._escalate(
+            state["ticket"].id,
+            "в индексах проекта нет релевантного контента по обращению",
+            triage,
+            state["dossier"],
+            skipped_llm=True,
+        )
+        return {}
+
+    async def _graph_escalate_invalid_refs(self, state: TicketGraphState) -> dict[str, Any]:
+        triage = state["triage"]
+        if triage is None:
+            raise RuntimeError("ticket graph cannot escalate without triage")
+        await self._escalate(
+            state["ticket"].id,
+            "модель не сослалась на найденные фрагменты контекста",
+            triage,
+            state["dossier"],
+        )
+        return {}
+
+    async def _graph_escalate_model(self, state: TicketGraphState) -> dict[str, Any]:
+        triage, resolution = state["triage"], state["resolution"]
+        if triage is None or resolution is None:
+            raise RuntimeError("ticket graph cannot escalate without a resolution result")
+        await self._escalate(
+            state["ticket"].id,
+            resolution.escalate_reason or "недостаточно данных для ответа",
+            triage,
+            state["dossier"],
+        )
+        return {}
 
     async def _resolve_models(self, source_id: int) -> "PipelineTargets":
         selections = await self._models.get_project_selections(source_id)
@@ -234,7 +394,9 @@ class TicketAgentUsecase:
             fallback_error="select a chat model for the ticket pipeline before running it",
         )
         assert strong_result is not None
-        triage_result = await self._target_for(selections.get("ticket_triage"), fallback=strong_result)
+        triage_result = await self._target_for(
+            selections.get("ticket_triage"), fallback=strong_result
+        )
         assert triage_result is not None
         cheap_selection = selections.get("ticket_resolution_cheap")
         cheap = await self._target_for(cheap_selection) if cheap_selection else None
@@ -291,12 +453,14 @@ class TicketAgentUsecase:
         started = time.monotonic()
         per_query = max(6, self._config.context_chunks // max(1, len(queries)))
         per_query_results: list[list[SearchHit]] = []
-        try:
-            for query in queries:
-                response = await self._retrieval.search(source_id, query, None, per_query)
+        for query in queries:
+            try:
+                response = await self._retrieval.search_ticket_context(
+                    source_id, ticket_id, query, per_query
+                )
                 per_query_results.append(list(response.hits))
-        except SearchUnavailableError:
-            return {}
+            except SearchUnavailableError:
+                per_query_results.append([])
         ordered = _interleave_deduped(per_query_results, self._config.context_chunks)
         dossier = {f"S{index + 1}": hit for index, hit in enumerate(ordered)}
         if dossier:
@@ -320,12 +484,15 @@ class TicketAgentUsecase:
         target: ModelTarget,
         dossier: dict[str, SearchHit],
         triage: TriageResult,
+        tier: str,
+        routing_reason: str,
     ) -> ResolutionResult:
         started = time.monotonic()
+        evidence, visible_refs = _format_dossier(dossier, self._config.max_context_characters)
         prompt = (
             f"Ticket title: {ticket.title}\n\nTicket description:\n{ticket.description}\n\n"
             f"Triage summary: {triage.summary}\n\nEvidence fragments:\n"
-            + _format_dossier(dossier, self._config.max_context_characters)
+            + evidence
         )
         resolution, usage = await _generate_parsed(
             self._gateway,
@@ -335,15 +502,16 @@ class TicketAgentUsecase:
             ResolutionResult,
             self._config,
         )
-        valid = _unique([ref for ref in resolution.source_refs if ref in dossier])
+        valid = _unique([ref for ref in resolution.source_refs if ref in visible_refs])
         routing = {
             "complexity": triage.complexity,
-            "tier": "cheap" if target is not None else "strong",
+            "tier": tier,
+            "reason": routing_reason,
         }
         await self._tickets.add_step(
             ticket.id,
             "resolve",
-            {"fragments": list(dossier), "decision": resolution.decision},
+            {"fragments": visible_refs, "decision": resolution.decision},
             {**resolution.model_dump(), "source_refs": valid, "routing": routing},
             model_id=target.model.id,
             duration_ms=_elapsed_ms(started),
@@ -351,7 +519,7 @@ class TicketAgentUsecase:
             tokens_out=usage.output_tokens,
             cost_usd=step_cost_usd(target.pricing, usage.input_tokens, usage.output_tokens),
         )
-        return resolution
+        return resolution.model_copy(update={"source_refs": valid})
 
     async def _escalate(
         self,
@@ -381,15 +549,13 @@ class TicketAgentUsecase:
         return updated
 
 
-def _interleave_deduped(
-    per_query_results: list[list[SearchHit]], limit: int
-) -> list[SearchHit]:
+def _interleave_deduped(per_query_results: list[list[SearchHit]], limit: int) -> list[SearchHit]:
     seen: set[str] = set()
     ordered: list[SearchHit] = []
-    position = 0
-    while len(ordered) < limit:
-        added = False
+    for position in range(max((len(results) for results in per_query_results), default=0)):
         for results in per_query_results:
+            if len(ordered) >= limit:
+                return ordered
             if position >= len(results):
                 continue
             hit = results[position]
@@ -397,12 +563,6 @@ def _interleave_deduped(
                 continue
             seen.add(hit.source_ref)
             ordered.append(hit)
-            added = True
-            if len(ordered) >= limit:
-                break
-        if not added:
-            break
-        position += 1
     return ordered
 
 
@@ -413,22 +573,29 @@ def _citation(hit: SearchHit) -> dict[str, Any]:
         "index_type": hit.index_type,
         "start_line": hit.start_line,
         "end_line": hit.end_line,
+        "ticket_id": hit.ticket_id,
+        "attachment_id": hit.attachment_id,
+        "event_timestamp": hit.event_timestamp,
     }
 
 
-def _format_dossier(dossier: dict[str, SearchHit], max_characters: int) -> str:
+def _format_dossier(dossier: dict[str, SearchHit], max_characters: int) -> tuple[str, list[str]]:
     parts: list[str] = []
-    used = 0
+    visible: list[str] = []
+    remaining = max_characters
     for ref, hit in dossier.items():
         location = hit.path + (
             f":{hit.start_line}-{hit.end_line}" if hit.start_line is not None else ""
         )
-        fragment = f"[{ref}] {location}\n{hit.content}\n"
-        if used + len(fragment) > max_characters and parts:
+        header = f"[{ref}] {location}\n"
+        available = remaining - len(header)
+        if available <= 0:
             break
+        fragment = header + hit.content[:available]
         parts.append(fragment)
-        used += len(fragment)
-    return "\n".join(parts)
+        visible.append(ref)
+        remaining -= len(fragment) + 2
+    return "\n\n".join(parts), visible
 
 
 def _elapsed_ms(started: float) -> int:
@@ -474,9 +641,10 @@ async def _generate_parsed[TSchema: BaseModel](
             gateway.generate_json_with_usage,
             target.credentials,
             target.model.provider_model_id,
-            "Convert the supplied model response into valid JSON of the required schema. "
-            "Keep the same useful content. Return JSON only without Markdown fences.",
-            f"Response to repair:\n{generated.text[:8000]}",
+            system_prompt,
+            f"{user_prompt}\n\nThe previous response failed schema validation. "
+            "Answer the original request using the supplied evidence and required JSON schema.\n"
+            f"Previous response:\n{generated.text[:8000]}",
             config.timeout_seconds,
             config.max_output_tokens,
         )
@@ -492,13 +660,6 @@ def _sum_usage(first: int | None, second: int | None) -> int | None:
     if first is None and second is None:
         return None
     return (first or 0) + (second or 0)
-
-
-@dataclass(frozen=True, slots=True)
-class PipelineTargets:
-    triage: "ModelTarget"
-    strong: "ModelTarget"
-    cheap: "ModelTarget | None"
 
 
 def resolver_target(triage: TriageResult, targets: "PipelineTargets") -> "ModelTarget":

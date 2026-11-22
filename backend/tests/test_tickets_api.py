@@ -1,7 +1,10 @@
 from httpx import AsyncClient
 from sqlalchemy import text
 
-TICKET_PAYLOAD = {"title": "Не работает вход", "description": "При входе в админку возвращается 401"}
+TICKET_PAYLOAD = {
+    "title": "Не работает вход",
+    "description": "При входе в админку возвращается 401",
+}
 
 
 async def _source_id(db_engine) -> int:
@@ -30,6 +33,36 @@ async def test_create_and_list_tickets(
     assert listed.status_code == 200
     assert [item["id"] for item in listed.json()] == [body["id"]]
 
+    stats = await api_client.get(f"/api/v1/sources/{source_id}/tickets/stats")
+    assert stats.status_code == 200
+    assert stats.json()["total"] == 1
+    assert stats.json()["by_status"]["new"] == 1
+    assert stats.json()["completed"] == 0
+
+
+async def test_ticket_stats_empty_project(
+    api_client: AsyncClient, db_engine, clean_database: None
+) -> None:
+    source_id = await _source_id(db_engine)
+    response = await api_client.get(f"/api/v1/sources/{source_id}/tickets/stats")
+    assert response.status_code == 200
+    assert response.json() == {
+        "total": 0,
+        "by_status": {"new": 0, "running": 0, "answered": 0, "escalated": 0, "failed": 0},
+        "completed": 0,
+        "autoresolve_rate": 0.0,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": None,
+        "avg_cost_usd": None,
+        "avg_tokens_per_ticket": 0.0,
+    }
+
+
+async def test_ticket_stats_unknown_project(api_client: AsyncClient, clean_database: None) -> None:
+    response = await api_client.get("/api/v1/sources/999999/tickets/stats")
+    assert response.status_code == 404
+
 
 async def test_create_ticket_unknown_project(api_client: AsyncClient, clean_database: None) -> None:
     response = await api_client.post("/api/v1/sources/999999/tickets", json=TICKET_PAYLOAD)
@@ -39,7 +72,9 @@ async def test_create_ticket_unknown_project(api_client: AsyncClient, clean_data
 async def test_create_ticket_validates_payload(
     api_client: AsyncClient, clean_database: None
 ) -> None:
-    response = await api_client.post("/api/v1/sources/1/tickets", json={"title": "a", "description": "short"})
+    response = await api_client.post(
+        "/api/v1/sources/1/tickets", json={"title": "a", "description": "short"}
+    )
     assert response.status_code == 422
 
 

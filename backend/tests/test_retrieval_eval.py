@@ -53,8 +53,8 @@ def test_load_golden_rejects_malformed_files(tmp_path: Path, broken: str) -> Non
         load_golden(_write_golden(tmp_path, broken))
 
 
-def test_run_evaluation_aggregates_metrics() -> None:
-    golden = load_golden(_write_golden(Path("/tmp"), VALID_GOLDEN))
+def test_run_evaluation_aggregates_metrics(tmp_path: Path) -> None:
+    golden = load_golden(_write_golden(tmp_path, VALID_GOLDEN))
 
     def search(query: str, index_types: list[str] | None, top_k: int) -> list[str]:
         if "архива" in query:
@@ -72,8 +72,8 @@ def test_run_evaluation_aggregates_metrics() -> None:
     assert meets_threshold(report, 0.99) is False
 
 
-def test_render_markdown_includes_missed_queries() -> None:
-    golden = load_golden(_write_golden(Path("/tmp"), VALID_GOLDEN))
+def test_render_markdown_includes_missed_queries(tmp_path: Path) -> None:
+    golden = load_golden(_write_golden(tmp_path, VALID_GOLDEN))
     report = run_evaluation(golden, lambda q, t, k: ["nothing.py"], top_k=3)
     markdown = render_markdown(report)
     assert "Missed queries" in markdown

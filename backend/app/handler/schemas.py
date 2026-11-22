@@ -60,6 +60,9 @@ class SearchHitOut(BaseModel):
     score: float
     rerank_score: float | None = None
     source_ref: str
+    ticket_id: int | None = None
+    attachment_id: int | None = None
+    event_timestamp: str | None = None
 
 
 class SearchMetaOut(BaseModel):
@@ -192,6 +195,8 @@ class ModelSelectionOut(BaseModel):
     indexing: int | None
     documentation_generation: int | None
     ticket_resolution: int | None
+    ticket_triage: int | None = None
+    ticket_resolution_cheap: int | None = None
 
 
 class TicketCreateIn(BaseModel):
@@ -207,6 +212,9 @@ class TicketCitationOut(BaseModel):
     index_type: str
     start_line: int | None = None
     end_line: int | None = None
+    ticket_id: int | None = None
+    attachment_id: int | None = None
+    event_timestamp: str | None = None
 
 
 class TicketBriefOut(BaseModel):
@@ -214,6 +222,29 @@ class TicketBriefOut(BaseModel):
     title: str
     status: str
     created_at: str | None = None
+    has_unready_log_attachments: bool = False
+
+
+class TicketStatsOut(BaseModel):
+    total: int
+    by_status: dict[str, int]
+    completed: int
+    autoresolve_rate: float
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float | None
+    avg_cost_usd: float | None
+    avg_tokens_per_ticket: float
+
+
+class TicketLogAttachmentOut(BaseModel):
+    id: int
+    filename: str
+    size_bytes: int
+    status: str
+    error: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class TicketOut(BaseModel):
@@ -236,6 +267,9 @@ class TicketStepOut(BaseModel):
     output_data: dict[str, Any]
     model_id: int | None = None
     duration_ms: int
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    cost_usd: float | None = None
     created_at: str | None = None
 
 

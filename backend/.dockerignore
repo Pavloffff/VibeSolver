@@ -1,0 +1,9 @@
+*
+!app/
+!app/**
+!migrations/
+!migrations/*.sql
+!entrypoint.sh
+!pyproject.toml
+!uv.lock
+**/__pycache__/

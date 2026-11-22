@@ -147,6 +147,8 @@ def complete_json(
         api_key,
         max_output_tokens,
     )
+    if not text:
+        raise ProviderUnavailableError("The model returned an empty generation response")
     return text
 
 
@@ -320,7 +322,7 @@ def _openai_chat_completion(
 
 def _chat_content(message: Any) -> str:
     content = message.get("content") if isinstance(message, dict) else None
-    if not isinstance(content, str) or not content.strip():
+    if not isinstance(content, str):
         raise ProviderUnavailableError("The model returned an empty generation response")
     return content.strip()
 

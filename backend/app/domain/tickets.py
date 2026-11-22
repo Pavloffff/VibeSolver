@@ -33,6 +33,7 @@ class Ticket:
     citations: list[dict[str, Any]] | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    has_unready_log_attachments: bool = False
 
 
 @dataclass(slots=True)

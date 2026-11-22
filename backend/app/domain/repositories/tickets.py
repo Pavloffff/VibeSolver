@@ -1,6 +1,6 @@
 from typing import Any, Protocol
 
-from app.domain.tickets import Ticket, TicketStep
+from app.domain.tickets import Ticket, TicketStats, TicketStep
 
 
 class TicketRepository(Protocol):
@@ -8,7 +8,11 @@ class TicketRepository(Protocol):
 
     async def get(self, ticket_id: int) -> Ticket | None: ...
 
+    async def has_unready_log_attachments(self, ticket_id: int) -> bool: ...
+
     async def list_for_source(self, source_id: int) -> list[Ticket]: ...
+
+    async def transition_status(self, ticket_id: int, expected: str, status: str) -> bool: ...
 
     async def update_result(
         self,
@@ -36,3 +40,5 @@ class TicketRepository(Protocol):
     async def list_steps(self, ticket_id: int) -> list[TicketStep]: ...
 
     async def usage_rows(self, source_id: int) -> list[tuple[str, int | None, int | None, float | None]]: ...
+
+    async def stats(self, source_id: int) -> TicketStats: ...

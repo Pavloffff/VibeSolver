@@ -1,3 +1,5 @@
+import asyncio
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -16,9 +18,7 @@ async def _source_id(db_engine) -> int:
         return int(result.scalar_one())
 
 
-async def test_ticket_roundtrip_and_append_only_steps(
-    db_engine, clean_database: None
-) -> None:
+async def test_ticket_roundtrip_and_append_only_steps(db_engine, clean_database: None) -> None:
     factory = async_sessionmaker(bind=db_engine, expire_on_commit=False)
     source_id = await _source_id(db_engine)
     async with factory() as session:
@@ -50,8 +50,62 @@ async def test_ticket_roundtrip_and_append_only_steps(
         assert [step.step for step in steps] == ["triage", "resolve"]
         assert steps[0].input_data == {"q": 1}
         assert steps[0].duration_ms == 12
+        assert steps[0].tokens_in is None
+        await repository.add_step(
+            ticket.id,
+            "triage",
+            {},
+            {},
+            model_id=3,
+            duration_ms=1,
+            tokens_in=10,
+            tokens_out=5,
+            cost_usd=0.001,
+        )
         assert first.ticket_id == ticket.id
+
+        stats = await repository.stats(source_id)
+        assert stats.total == 1
+        assert stats.by_status == {
+            "new": 0,
+            "running": 0,
+            "answered": 1,
+            "escalated": 0,
+            "failed": 0,
+        }
+        assert stats.completed == 1
+        assert stats.autoresolve_rate == 1
+        assert stats.tokens_in == 10
+        assert stats.tokens_out == 5
+        assert stats.cost_usd == 0.001
+        assert stats.avg_cost_usd == 0.001
+        assert stats.avg_tokens_per_ticket == 15
 
         listed = await repository.list_for_source(source_id)
         assert [item.id for item in listed] == [ticket.id]
         assert await repository.get(ticket.id) is not None
+
+
+async def test_concurrent_run_claims_have_one_winner(db_engine, clean_database: None) -> None:
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    source_id = await _source_id(db_engine)
+    async with factory() as session:
+        ticket = await TicketSqlRepository(session).create(source_id, "title", "description")
+
+    async def claim() -> bool:
+        async with factory() as session:
+            return await TicketSqlRepository(session).transition_status(ticket.id, "new", "running")
+
+    assert sorted(await asyncio.gather(claim(), claim())) == [False, True]
+
+
+async def test_ticket_stats_empty_source(db_engine, clean_database: None) -> None:
+    factory = async_sessionmaker(bind=db_engine, expire_on_commit=False)
+    source_id = await _source_id(db_engine)
+    async with factory() as session:
+        stats = await TicketSqlRepository(session).stats(source_id)
+    assert stats.total == 0
+    assert stats.completed == 0
+    assert stats.autoresolve_rate == 0
+    assert stats.avg_cost_usd is None
+    assert stats.avg_tokens_per_ticket == 0

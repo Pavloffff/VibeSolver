@@ -117,6 +117,20 @@ export interface ProjectModelSelections {
   indexing: number | null
   documentation_generation: number | null
   ticket_resolution?: number | null
+  ticket_triage?: number | null
+  ticket_resolution_cheap?: number | null
+}
+
+export interface TicketStats {
+  total: number
+  by_status: Record<string, number>
+  completed: number
+  autoresolve_rate: number
+  tokens_in: number
+  tokens_out: number
+  cost_usd: number | null
+  avg_cost_usd: number | null
+  avg_tokens_per_ticket: number
 }
 
 export interface TicketBrief {
@@ -124,6 +138,7 @@ export interface TicketBrief {
   title: string
   status: string
   created_at: string | null
+  has_unready_log_attachments?: boolean
 }
 
 export interface TicketCitation {
@@ -154,12 +169,27 @@ export interface TicketStep {
   output_data: Record<string, unknown>
   model_id: number | null
   duration_ms: number
+  tokens_in: number | null
+  tokens_out: number | null
+  cost_usd: number | null
   created_at: string | null
 }
 
 export interface TicketDetail {
   ticket: Ticket
   steps: TicketStep[]
+}
+
+export type TicketLogAttachmentStatus = 'queued' | 'processing' | 'ready' | 'failed'
+
+export interface TicketLogAttachment {
+  id: number
+  filename: string
+  size_bytes: number
+  status: TicketLogAttachmentStatus
+  error: string | null
+  created_at: string | null
+  updated_at: string | null
 }
 
 export interface OllamaPullProgress {

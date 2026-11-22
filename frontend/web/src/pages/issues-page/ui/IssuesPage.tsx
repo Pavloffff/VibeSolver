@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import { getApiClient, getErrorMessage } from '../../../shared/api/client'
 import type { ApiClient } from '../../../shared/api/client'
-import type { ProjectModelSelections, TicketBrief, TicketDetail, WorkspaceModel } from '../../../shared/api/types'
+import type { ProjectModelSelections, TicketBrief, TicketDetail, TicketStats, WorkspaceModel } from '../../../shared/api/types'
 import { useT } from '../../../shared/i18n'
 import type { TranslationKey } from '../../../shared/i18n'
+import { parseTicketText } from '../../../features/issues'
+import TicketLogAttachments from '../../../features/ticket-log-attachments'
 
 interface Props {
   projectId: number
@@ -25,11 +28,17 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
   const [selected, setSelected] = useState<TicketDetail | null>(null)
   const [chatModels, setChatModels] = useState<WorkspaceModel[]>([])
   const [selections, setSelections] = useState<ProjectModelSelections | null>(null)
+  const [stats, setStats] = useState<TicketStats | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [blockedLogTickets, setBlockedLogTickets] = useState<Record<number, boolean>>({})
+
+  const updateLogBlocked = useCallback((ticketId: number, blocked: boolean) => {
+    setBlockedLogTickets((current) => ({ ...current, [ticketId]: blocked }))
+  }, [])
 
   const refreshTickets = useCallback(async () => {
     setTickets(await api.listTickets(projectId))
@@ -40,11 +49,12 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
     void refreshTickets().catch((requestError: unknown) => {
       if (!cancelled) setError(getErrorMessage(requestError))
     })
-    void Promise.all([api.listWorkspaceModels(), api.getProjectModelSelections(projectId)])
-      .then(([models, modelSelections]) => {
+    void Promise.all([api.listWorkspaceModels(), api.getProjectModelSelections(projectId), api.getTicketStats(projectId)])
+      .then(([models, modelSelections, ticketStats]) => {
         if (cancelled) return
         setChatModels(models.filter((model) => model.capabilities.includes('chat')))
         setSelections(modelSelections)
+        setStats(ticketStats)
       })
       .catch((requestError: unknown) => {
         if (!cancelled) setError(getErrorMessage(requestError))
@@ -52,9 +62,9 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
     return () => { cancelled = true }
   }, [api, projectId, refreshTickets])
 
-  const changeModel = async (modelId: number | null) => {
+  const changeModel = async (role: 'ticket_triage' | 'ticket_resolution' | 'ticket_resolution_cheap', modelId: number | null) => {
     try {
-      setSelections(await api.setProjectModelSelection(projectId, 'ticket_resolution', modelId))
+      setSelections(await api.setProjectModelSelection(projectId, role, modelId))
     } catch (requestError) {
       setError(getErrorMessage(requestError))
     }
@@ -78,14 +88,49 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
     }
   }
 
+  const importTicketText = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (file === undefined) return
+
+    setError(null)
+    if (!file.name.toLowerCase().endsWith('.txt')) {
+      setError(t('issues.importTextInvalidType'))
+      input.value = ''
+      return
+    }
+
+    try {
+      const parsed = parseTicketText(await file.text())
+      if (parsed === null || parsed.title.length < 3 || parsed.title.length > 200 || parsed.description.length < 10 || parsed.description.length > 20000) {
+        setError(t('issues.importTextInvalidContent'))
+        return
+      }
+      setTitle(parsed.title)
+      setDescription(parsed.description)
+    } catch {
+      setError(t('issues.importTextReadError'))
+    } finally {
+      input.value = ''
+    }
+  }
+
   const runTicket = async (ticketId: number) => {
     setBusy(`run-${ticketId}`)
     setError(null)
     setNotice(null)
     try {
+      const attachments = await api.listTicketLogAttachments(ticketId)
+      const hasUnreadyLogs = attachments.some((item) => item.status !== 'ready')
+      updateLogBlocked(ticketId, hasUnreadyLogs)
+      if (hasUnreadyLogs) {
+        setSelected(await api.getTicket(ticketId))
+        setError(t('issues.logsNotReady'))
+        return
+      }
       const detail = await api.runTicket(ticketId)
       setSelected(detail)
-      await refreshTickets()
+      await Promise.all([refreshTickets(), api.getTicketStats(projectId).then(setStats)])
       setNotice(detail.ticket.status === 'answered' ? t('issues.answerReady') : t('issues.escalatedNotice'))
     } catch (runError) {
       setError(getErrorMessage(runError))
@@ -103,8 +148,22 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
     }
   }
 
-  const canRun = (status: string) => status !== 'running'
-  const selectedModelId = selections?.ticket_resolution ?? null
+  const canRun = (ticketId: number, status: string, hasUnreadyLogs?: boolean) =>
+    status !== 'running' && hasUnreadyLogs !== true && blockedLogTickets[ticketId] !== true
+  const modelPicker = (label: string, role: 'ticket_triage' | 'ticket_resolution' | 'ticket_resolution_cheap', modelId: number | null | undefined) => (
+    <label className="generation-model-picker" key={role}>{label}
+      <select
+        value={modelId ?? ''}
+        disabled={chatModels.length === 0}
+        onChange={(event) => void changeModel(role, event.target.value ? Number(event.target.value) : null)}
+      >
+        <option value="">{t(chatModels.length === 0 ? 'materials.noChatModels' : 'issues.selectModel')}</option>
+        {chatModels.map((model) => (
+          <option key={model.id} value={model.id}>{model.display_name} · {model.provider_name}</option>
+        ))}
+      </select>
+    </label>
+  )
 
   return (
     <div className="issues-page">
@@ -114,24 +173,31 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
           <h1>{t('project.issues')}</h1>
           <p>{t('issues.pageDescription')}</p>
         </div>
-        <label className="generation-model-picker">{t('issues.model')}
-          <select
-            value={selectedModelId ?? ''}
-            disabled={chatModels.length === 0}
-            onChange={(event) => void changeModel(event.target.value ? Number(event.target.value) : null)}
-          >
-            <option value="">{t(chatModels.length === 0 ? 'materials.noChatModels' : 'issues.selectModel')}</option>
-            {chatModels.map((model) => (
-              <option key={model.id} value={model.id}>{model.display_name} · {model.provider_name}</option>
-            ))}
-          </select>
-        </label>
+        <div className="issues-model-pickers">
+          {modelPicker(t('issues.triageModel'), 'ticket_triage', selections?.ticket_triage)}
+          {modelPicker(t('issues.resolutionModel'), 'ticket_resolution', selections?.ticket_resolution)}
+          {modelPicker(t('issues.cheapModel'), 'ticket_resolution_cheap', selections?.ticket_resolution_cheap)}
+        </div>
       </div>
 
       {error !== null && <div className="error page-alert" role="alert">{error}</div>}
       {notice !== null && <div className="success-note models-notice" role="status">{notice}</div>}
 
+      {stats !== null && (
+        <section className="project-card issues-stats" aria-label={t('issues.statsTitle')}>
+          <div className="project-card-heading"><div><h2>{t('issues.statsTitle')}</h2><p>{t('issues.statsHint')}</p></div></div>
+          <div className="provider-card-meta">
+            <span><strong>{t('issues.autoresolveRate')}</strong> {Math.round(stats.autoresolve_rate * 100)}%</span>
+            <span><strong>{t('issues.averageCost')}</strong> {stats.avg_cost_usd === null ? '—' : `$${stats.avg_cost_usd.toFixed(4)}`}</span>
+            <span><strong>{t('issues.tokenUsage')}</strong> {stats.tokens_in.toLocaleString()} / {stats.tokens_out.toLocaleString()}</span>
+            <span><strong>{t('issues.averageTokens')}</strong> {Math.round(stats.avg_tokens_per_ticket).toLocaleString()}</span>
+          </div>
+        </section>
+      )}
+
       <form className="project-card issues-create-form" onSubmit={submitTicket}>
+        <label>{t('issues.importTextFile')}<input type="file" accept=".txt,text/plain" onChange={(event) => void importTicketText(event)} /></label>
+        <p className="field-hint">{t('issues.importTextHint')}</p>
         <label>{t('issues.titleLabel')}<input required minLength={3} maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} /></label>
         <label>{t('issues.descriptionLabel')}<textarea required minLength={10} maxLength={20000} rows={4} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
         <button type="submit" className="btn btn-primary" disabled={busy !== null}>{busy === 'create' ? t('project.uploading') : `+ ${t('project.addIssue')}`}</button>
@@ -154,7 +220,7 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={busy !== null || !canRun(ticket.status)}
+                  disabled={busy !== null || !canRun(ticket.id, ticket.status, ticket.has_unready_log_attachments)}
                   onClick={() => void runTicket(ticket.id)}
                 >
                   {busy === `run-${ticket.id}` ? t('issues.running') : ticket.status === 'new' ? t('issues.run') : t('issues.rerun')}
@@ -220,6 +286,12 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
             </div>
           )}
 
+          <TicketLogAttachments
+            ticketId={selected.ticket.id}
+            api={api}
+            onUnreadyChange={updateLogBlocked}
+          />
+
           <details className="issues-trace">
             <summary>{t('issues.trace')}</summary>
             <ol>
@@ -227,6 +299,8 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
                 <li key={index}>
                   <strong>{step.step}</strong>
                   {step.duration_ms > 0 && <span> · {step.duration_ms} ms</span>}
+                  {(step.tokens_in !== null || step.tokens_out !== null) && <span> · {step.tokens_in ?? 0} / {step.tokens_out ?? 0} tokens</span>}
+                  {step.cost_usd !== null && <span> · ${step.cost_usd.toFixed(6)}</span>}
                   <pre>{JSON.stringify(step.output_data, null, 2)}</pre>
                 </li>
               ))}
