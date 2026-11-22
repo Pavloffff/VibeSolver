@@ -128,7 +128,7 @@ This repo follows OpenSpec conventions (see `openspec/AGENTS.md`):
 5. `/opsx:archive` — move completed change to archive.
 
 Rules of thumb:
-- Specs are written by the smartest available model; implementation may use a cheaper one; review uses a smart model again.
+- Use Astra for task sizing, architecture, difficult investigation, and final review. Delegate bounded implementation and testing to Sol or Terra. Use Luna or another lightweight 5/6-series model for simple lookups, browser checks, and routine edits. Give each subagent only the context its task requires.
 - A spec is done when further refinement causes fatigue — not before.
 - ALL spec artifacts (proposal.md, specs/, design.md, tasks.md) and docs are in **Russian**. Code, identifiers, commit messages in English.
 
