@@ -904,6 +904,206 @@
         }
       }
     },
+    "/api/v1/sources/{source_id}/source-browser": {
+      "get": {
+        "tags": [
+          "source-browser"
+        ],
+        "summary": "Get Source Browser Snapshot",
+        "operationId": "get_source_browser_snapshot_api_v1_sources__source_id__source_browser_get",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceBrowserSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{source_id}/source-browser/{snapshot_id}/tree": {
+      "get": {
+        "tags": [
+          "source-browser"
+        ],
+        "summary": "Get Source Browser Tree",
+        "operationId": "get_source_browser_tree_api_v1_sources__source_id__source_browser__snapshot_id__tree_get",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Snapshot Id"
+            }
+          },
+          {
+            "name": "branch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Branch"
+            }
+          },
+          {
+            "name": "folder",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Folder"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 83
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceBrowserTree"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{source_id}/source-browser/{snapshot_id}/file": {
+      "get": {
+        "tags": [
+          "source-browser"
+        ],
+        "summary": "Get Source Browser File",
+        "operationId": "get_source_browser_file_api_v1_sources__source_id__source_browser__snapshot_id__file_get",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Snapshot Id"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          },
+          {
+            "name": "branch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Branch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceBrowserFile"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/connectors": {
       "get": {
         "tags": [
@@ -2132,6 +2332,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TicketRunIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2142,6 +2359,264 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{source_id}/solver-graph": {
+      "get": {
+        "tags": [
+          "solver"
+        ],
+        "summary": "Get Solver Graph",
+        "operationId": "get_solver_graph_api_v1_sources__source_id__solver_graph_get",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SolverGraphOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{source_id}/solver-profiles": {
+      "post": {
+        "tags": [
+          "solver"
+        ],
+        "summary": "Create Solver Profile",
+        "operationId": "create_solver_profile_api_v1_sources__source_id__solver_profiles_post",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolverProfileInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SolverProfile"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{source_id}/solver-profiles/{profile_id}": {
+      "put": {
+        "tags": [
+          "solver"
+        ],
+        "summary": "Update Solver Profile",
+        "operationId": "update_solver_profile_api_v1_sources__source_id__solver_profiles__profile_id__put",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolverProfileInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SolverProfile"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "solver"
+        ],
+        "summary": "Delete Solver Profile",
+        "operationId": "delete_solver_profile_api_v1_sources__source_id__solver_profiles__profile_id__delete",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "replacement_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Replacement Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{source_id}/solver-profiles/{profile_id}/default": {
+      "put": {
+        "tags": [
+          "solver"
+        ],
+        "summary": "Set Default Solver Profile",
+        "operationId": "set_default_solver_profile_api_v1_sources__source_id__solver_profiles__profile_id__default_put",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -3329,6 +3804,385 @@
         ],
         "title": "SearchOut"
       },
+      "SolverEdgeOut": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "target"
+        ],
+        "title": "SolverEdgeOut"
+      },
+      "SolverEnabled": {
+        "properties": {
+          "triage": {
+            "type": "boolean",
+            "title": "Triage",
+            "default": true
+          },
+          "resolve": {
+            "type": "boolean",
+            "title": "Resolve",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SolverEnabled"
+      },
+      "SolverGraphOut": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/SolverNodeOut"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/SolverEdgeOut"
+            },
+            "type": "array",
+            "title": "Edges"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/SolverProfile"
+            },
+            "type": "array",
+            "title": "Profiles"
+          },
+          "default_profile_id": {
+            "type": "integer",
+            "title": "Default Profile Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nodes",
+          "edges",
+          "profiles",
+          "default_profile_id"
+        ],
+        "title": "SolverGraphOut"
+      },
+      "SolverModelSnapshot": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "display_name"
+        ],
+        "title": "SolverModelSnapshot"
+      },
+      "SolverModelSnapshots": {
+        "properties": {
+          "ticket_resolution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SolverModelSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ticket_triage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SolverModelSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ticket_resolution_cheap": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SolverModelSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "SolverModelSnapshots"
+      },
+      "SolverModels": {
+        "properties": {
+          "ticket_resolution": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Resolution"
+          },
+          "ticket_triage": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Triage"
+          },
+          "ticket_resolution_cheap": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Resolution Cheap"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SolverModels"
+      },
+      "SolverNodeOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "optional": {
+            "type": "boolean",
+            "title": "Optional"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "optional"
+        ],
+        "title": "SolverNodeOut"
+      },
+      "SolverProfile": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "enabled": {
+            "$ref": "#/components/schemas/SolverEnabled"
+          },
+          "models": {
+            "$ref": "#/components/schemas/SolverModels"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "enabled",
+          "models",
+          "id"
+        ],
+        "title": "SolverProfile"
+      },
+      "SolverProfileInput": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "enabled": {
+            "$ref": "#/components/schemas/SolverEnabled"
+          },
+          "models": {
+            "$ref": "#/components/schemas/SolverModels"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "enabled",
+          "models"
+        ],
+        "title": "SolverProfileInput"
+      },
+      "SourceBrowserEntry": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "directory",
+              "file"
+            ],
+            "title": "Kind"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "kind",
+          "size_bytes"
+        ],
+        "title": "SourceBrowserEntry"
+      },
+      "SourceBrowserFile": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "too_large",
+              "binary",
+              "unsupported_encoding",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "status"
+        ],
+        "title": "SourceBrowserFile"
+      },
+      "SourceBrowserSnapshot": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "not_imported",
+              "reimport_required"
+            ],
+            "title": "Status"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          },
+          "branches": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Branches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "SourceBrowserSnapshot"
+      },
+      "SourceBrowserTree": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/SourceBrowserEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entries",
+          "next_cursor"
+        ],
+        "title": "SourceBrowserTree"
+      },
       "SourceCreate": {
         "properties": {
           "type": {
@@ -3608,6 +4462,13 @@
             },
             "type": "array",
             "title": "Steps"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/TicketRun"
+            },
+            "type": "array",
+            "title": "Runs"
           }
         },
         "type": "object",
@@ -3774,6 +4635,89 @@
         ],
         "title": "TicketOut"
       },
+      "TicketRun": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "profile_id": {
+            "type": "integer",
+            "title": "Profile Id"
+          },
+          "profile_name": {
+            "type": "string",
+            "title": "Profile Name"
+          },
+          "enabled": {
+            "$ref": "#/components/schemas/SolverEnabled"
+          },
+          "models": {
+            "$ref": "#/components/schemas/SolverModelSnapshots"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "profile_id",
+          "profile_name",
+          "enabled",
+          "models",
+          "status",
+          "created_at"
+        ],
+        "title": "TicketRun"
+      },
+      "TicketRunIn": {
+        "properties": {
+          "profile_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          }
+        },
+        "type": "object",
+        "title": "TicketRunIn"
+      },
       "TicketStatsOut": {
         "properties": {
           "total": {
@@ -3918,6 +4862,22 @@
               }
             ],
             "title": "Created At"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "completed"
           }
         },
         "type": "object",

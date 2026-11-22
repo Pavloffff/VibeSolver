@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from app.adapter.config import Settings
 
@@ -23,3 +23,21 @@ def ensure_bucket(client: "S3Client", bucket: str) -> None:
         client.head_bucket(Bucket=bucket)
     except ClientError:
         client.create_bucket(Bucket=bucket)
+
+
+def read_object_prefix(settings: Settings, key: str, max_bytes: int) -> bytes | None:
+    try:
+        client = make_s3_client(settings)
+        body = client.get_object(Bucket=settings.s3_bucket_raw, Key=key)["Body"]
+        try:
+            data = bytearray()
+            while len(data) < max_bytes:
+                chunk = body.read(max_bytes - len(data))
+                if not chunk:
+                    break
+                data.extend(chunk)
+        finally:
+            body.close()
+    except (BotoCoreError, ClientError):
+        return None
+    return bytes(data)

@@ -49,6 +49,8 @@ class TicketStep:
     tokens_out: int | None = None
     cost_usd: float | None = None
     created_at: datetime | None = None
+    run_id: int | None = None
+    status: str = "completed"
 
 
 @dataclass(frozen=True, slots=True)

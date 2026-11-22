@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import PositiveInt
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,8 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["*"]
     max_upload_bytes: int = 500 * 1024 * 1024
     max_archive_unpacked_bytes: int = 2 * 1024 * 1024 * 1024
+    source_browser_preview_max_bytes: PositiveInt = 256 * 1024
+    source_browser_page_size: PositiveInt = 100
     model_secrets_key: str | None = None
     provider_request_timeout_seconds: int = 20
     rerank_api_url: str = ""

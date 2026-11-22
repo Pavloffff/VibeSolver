@@ -13,11 +13,13 @@ from app.adapter.repositories import (
     SourceSqlRepository,
     TicketSqlRepository,
 )
+from app.adapter.repositories.solver import SolverSqlRepository
 from app.adapter.repositories.ticket_logs import TicketLogSqlRepository
 from app.adapter.ticket_log_storage import build_ticket_log_storage
 from app.adapter.ticket_log_tasks import run_ticket_log_attachment
 from app.domain.entities import SourceNotFoundError
 from app.domain.model_provider_entities import ProviderUnavailableError
+from app.domain.solver import SolverProfileNotFoundError
 from app.domain.ticket_logs import TicketLogAttachment
 from app.domain.tickets import Ticket, TicketConflictError, TicketNotFoundError, TicketStep
 from app.handler.routes.search import build_retrieval_usecase
@@ -28,6 +30,7 @@ from app.handler.schemas import (
     TicketDetailOut,
     TicketLogAttachmentOut,
     TicketOut,
+    TicketRunIn,
     TicketStatsOut,
     TicketStepOut,
 )
@@ -103,11 +106,16 @@ async def ticket_stats(source_id: int, session: SessionDep) -> TicketStatsOut:
 
 @router.get("/tickets/{ticket_id}", response_model=TicketDetailOut)
 async def ticket_details(ticket_id: int, session: SessionDep) -> TicketDetailOut:
+    usecase = build_ticket_usecase(session)
     try:
-        ticket, steps = await build_ticket_usecase(session).ticket_details(ticket_id)
+        ticket, steps = await usecase.ticket_details(ticket_id)
     except TicketNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Ticket not found") from exc
-    return TicketDetailOut(ticket=_ticket_out(ticket), steps=[_step_out(s) for s in steps])
+    return TicketDetailOut(
+        ticket=_ticket_out(ticket),
+        steps=[_step_out(s) for s in steps],
+        runs=await usecase.ticket_runs(ticket_id),
+    )
 
 
 @router.post(
@@ -233,7 +241,9 @@ async def delete_ticket_log_attachment(
 
 
 @router.post("/tickets/{ticket_id}/run", response_model=TicketDetailOut)
-async def run_ticket(ticket_id: int, session: SessionDep) -> TicketDetailOut:
+async def run_ticket(
+    ticket_id: int, session: SessionDep, payload: TicketRunIn | None = None
+) -> TicketDetailOut:
     ticket = await TicketSqlRepository(session).get(ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
@@ -247,9 +257,14 @@ async def run_ticket(ticket_id: int, session: SessionDep) -> TicketDetailOut:
         )
     usecase = build_ticket_usecase(session)
     try:
-        ticket = await usecase.run(ticket_id)
+        profile = await SolverSqlRepository(session).get(
+            ticket.source_id, payload.profile_id if payload is not None else None
+        )
+        ticket = await usecase.run(ticket_id, profile=profile)
     except TicketNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Ticket not found") from exc
+    except (SolverProfileNotFoundError, SourceNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except TicketConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except TicketAgentUnavailableError as exc:
@@ -257,7 +272,11 @@ async def run_ticket(ticket_id: int, session: SessionDep) -> TicketDetailOut:
     except (TicketAgentResponseError, ProviderUnavailableError, RuntimeError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     _, steps = await usecase.ticket_details(ticket.id)
-    return TicketDetailOut(ticket=_ticket_out(ticket), steps=[_step_out(s) for s in steps])
+    return TicketDetailOut(
+        ticket=_ticket_out(ticket),
+        steps=[_step_out(s) for s in steps],
+        runs=await usecase.ticket_runs(ticket.id),
+    )
 
 
 def _brief_out(ticket: Ticket) -> TicketBriefOut:
@@ -297,6 +316,8 @@ def _step_out(step: TicketStep) -> TicketStepOut:
         tokens_out=step.tokens_out,
         cost_usd=step.cost_usd,
         created_at=_iso(step.created_at),
+        run_id=step.run_id,
+        status=step.status,
     )
 
 

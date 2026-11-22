@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.solver import SolverModelSnapshots, SolverProfile, TicketRun
 from app.domain.tickets import TICKET_STATUSES, Ticket, TicketStats, TicketStep
 
 
@@ -63,6 +64,42 @@ class TicketSqlRepository:
         await self._session.commit()
         return changed
 
+    async def start_run(
+        self, ticket_id: int, expected: str, profile: SolverProfile, models: SolverModelSnapshots
+    ) -> int | None:
+        result = await self._session.execute(
+            text(
+                "WITH started AS (UPDATE tickets SET status = 'running', updated_at = now() "
+                "WHERE id = :ticket_id AND status = :expected "
+                "AND NOT EXISTS (SELECT 1 FROM ticket_log_attachments "
+                "WHERE ticket_id = :ticket_id AND status <> 'ready') RETURNING id) "
+                "INSERT INTO ticket_runs (ticket_id, profile_id, profile_name, enabled, models, status) "
+                "SELECT id, :profile_id, :name, CAST(:enabled AS jsonb), CAST(:models AS jsonb), "
+                "'running' FROM started RETURNING id"
+            ),
+            {
+                "ticket_id": ticket_id,
+                "expected": expected,
+                "profile_id": profile.id,
+                "name": profile.name,
+                "enabled": profile.enabled.model_dump_json(),
+                "models": json.dumps(
+                    {**models.model_dump(mode="json"), "configured": profile.models.model_dump()},
+                    ensure_ascii=False,
+                ),
+            },
+        )
+        run_id = result.scalar_one_or_none()
+        await self._session.commit()
+        return int(run_id) if run_id is not None else None
+
+    async def list_runs(self, ticket_id: int) -> list[TicketRun]:
+        rows = await self._session.execute(
+            text("SELECT * FROM ticket_runs WHERE ticket_id = :ticket_id ORDER BY id"),
+            {"ticket_id": ticket_id},
+        )
+        return [TicketRun.model_validate(dict(row)) for row in rows.mappings()]
+
     async def update_result(
         self,
         ticket_id: int,
@@ -71,17 +108,20 @@ class TicketSqlRepository:
         answer: str | None = None,
         escalate_reason: str | None = None,
         citations: list[dict[str, Any]] | None = None,
+        run_id: int | None = None,
     ) -> Ticket | None:
         await self._session.execute(
             text(
                 "UPDATE tickets SET status = :status, "
-                "triage_json = COALESCE(CAST(:triage AS jsonb), triage_json), "
+                "triage_json = CASE WHEN CAST(:run_id AS bigint) IS NULL "
+                "THEN COALESCE(CAST(:triage AS jsonb), triage_json) ELSE CAST(:triage AS jsonb) END, "
                 "answer = :answer, escalate_reason = :escalate_reason, "
                 "citations_json = CAST(:citations AS jsonb), updated_at = now() "
                 "WHERE id = :ticket_id"
             ),
             {
                 "ticket_id": ticket_id,
+                "run_id": run_id,
                 "status": status,
                 "triage": json.dumps(triage, ensure_ascii=False) if triage is not None else None,
                 "answer": answer,
@@ -91,6 +131,19 @@ class TicketSqlRepository:
                 else None,
             },
         )
+        if run_id is not None:
+            await self._session.execute(
+                text(
+                    "UPDATE ticket_runs SET status = :status, error = :error, finished_at = now() "
+                    "WHERE id = :run_id AND ticket_id = :ticket_id"
+                ),
+                {
+                    "run_id": run_id,
+                    "ticket_id": ticket_id,
+                    "status": status,
+                    "error": escalate_reason if status == "failed" else None,
+                },
+            )
         await self._session.commit()
         return await self.get(ticket_id)
 
@@ -105,13 +158,15 @@ class TicketSqlRepository:
         tokens_in: int | None = None,
         tokens_out: int | None = None,
         cost_usd: float | None = None,
+        run_id: int | None = None,
+        status: str = "completed",
     ) -> TicketStep:
         result = await self._session.execute(
             text(
                 "INSERT INTO ticket_steps (ticket_id, step, input_json, output_json, model_id, duration_ms, "
-                "tokens_in, tokens_out, cost_usd) "
+                "tokens_in, tokens_out, cost_usd, run_id, status) "
                 "VALUES (:ticket_id, :step, CAST(:input_json AS jsonb), CAST(:output_json AS jsonb), "
-                ":model_id, :duration_ms, :tokens_in, :tokens_out, :cost_usd) RETURNING id, created_at"
+                ":model_id, :duration_ms, :tokens_in, :tokens_out, :cost_usd, :run_id, :status) RETURNING id, created_at"
             ),
             {
                 "ticket_id": ticket_id,
@@ -123,6 +178,8 @@ class TicketSqlRepository:
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
                 "cost_usd": cost_usd,
+                "run_id": run_id,
+                "status": status,
             },
         )
         row = result.one()
@@ -139,6 +196,8 @@ class TicketSqlRepository:
             tokens_out=tokens_out,
             cost_usd=cost_usd,
             created_at=row.created_at,
+            run_id=run_id,
+            status=status,
         )
 
     async def usage_rows(
@@ -210,7 +269,7 @@ class TicketSqlRepository:
     async def list_steps(self, ticket_id: int) -> list[TicketStep]:
         rows = await self._session.execute(
             text(
-                "SELECT id, ticket_id, step, input_json, output_json, model_id, duration_ms, tokens_in, tokens_out, cost_usd, created_at "
+                "SELECT id, ticket_id, step, input_json, output_json, model_id, duration_ms, tokens_in, tokens_out, cost_usd, created_at, run_id, status "
                 "FROM ticket_steps WHERE ticket_id = :ticket_id ORDER BY id"
             ),
             {"ticket_id": ticket_id},
@@ -258,5 +317,7 @@ def _to_step(row: Any) -> TicketStep:
         tokens_in=int(row.tokens_in) if row.tokens_in is not None else None,
         tokens_out=int(row.tokens_out) if row.tokens_out is not None else None,
         cost_usd=float(row.cost_usd) if row.cost_usd is not None else None,
+        run_id=row.run_id,
+        status=row.status,
         created_at=row.created_at if isinstance(row.created_at, datetime) else None,
     )

@@ -13,6 +13,7 @@ from app.domain.repositories.retrieval import (
     SearchResponse,
     SearchUnavailableError,
 )
+from app.domain.solver import SolverEnabled, SolverModels, SolverModelSnapshots, SolverProfile
 from app.domain.tickets import Ticket, TicketConflictError
 from app.usecase.ticket_agent import (
     RESOLVER_SYSTEM,
@@ -74,6 +75,7 @@ class FakeTickets:
         self.next_id = 1
         self.tickets: dict[int, Ticket] = {}
         self.steps: list[Any] = []
+        self.run_models: SolverModelSnapshots | None = None
         self.unready_log_attachments = False
 
     async def create(self, source_id: int, title: str, description: str) -> Ticket:
@@ -96,6 +98,14 @@ class FakeTickets:
             return False
         ticket.status = status
         return True
+
+    async def start_run(
+        self, ticket_id: int, expected: str, profile: SolverProfile, models: SolverModelSnapshots
+    ) -> int | None:
+        if await self.transition_status(ticket_id, expected, "running"):
+            self.run_models = models
+            return 1
+        return None
 
     async def update_result(self, ticket_id: int, status: str, **kwargs: Any) -> Ticket | None:
         ticket = self.tickets[ticket_id]
@@ -321,12 +331,8 @@ def test_ticket_agent_uses_compiled_langgraph_with_explicit_routes() -> None:
 
     graph = usecase._graph.get_graph()
 
-    assert {"resolve_models", "triage", "investigate", "resolve", "answer"}.issubset(
-        graph.nodes
-    )
-    assert {"escalate_empty", "escalate_invalid_refs", "escalate_model"}.issubset(
-        graph.nodes
-    )
+    assert {"resolve_models", "triage", "investigate", "resolve", "answer"}.issubset(graph.nodes)
+    assert {"escalate_empty", "escalate_invalid_refs", "escalate_model"}.issubset(graph.nodes)
 
 
 async def test_run_answers_with_valid_citations() -> None:
@@ -345,6 +351,115 @@ async def test_run_answers_with_valid_citations() -> None:
     assert tickets.steps[-1]["output"]["routing"]["tier"] == "strong"
     assert tickets.steps[-1]["tokens_in"] is None
     assert len(gateway.calls) == 2
+
+
+async def test_solver_profile_without_resolution_returns_evidence_to_engineer() -> None:
+    tickets = FakeTickets()
+    gateway = FakeGateway([])
+    retrieval = FakeRetrieval()
+    usecase = _usecase(tickets, gateway, retrieval=retrieval)
+    ticket = await usecase.create_ticket(1, "Ошибка загрузки", "HTTP 502 при сохранении")
+    profile = SolverProfile(
+        id=5,
+        name="Ручная проверка",
+        enabled=SolverEnabled(triage=False, resolve=False),
+        models=SolverModels(),
+    )
+
+    result = await usecase.run(ticket.id, profile=profile)
+
+    assert result.status == "escalated"
+    assert result.citations
+    assert retrieval.calls == ["Ошибка загрузки\nHTTP 502 при сохранении"]
+    assert not gateway.calls
+    assert [step["step"] for step in tickets.steps] == [
+        "triage",
+        "investigate",
+        "resolve",
+        "escalate",
+    ]
+    assert tickets.steps[0]["status"] == tickets.steps[2]["status"] == "skipped"
+    assert tickets.steps[-1]["output"]["evidence"]["S1"]["path"] == "app/module_0.py"
+
+
+async def test_solver_profile_without_triage_routes_to_strong_model() -> None:
+    tickets = FakeTickets()
+    gateway = FakeGateway([ANSWER_JSON])
+    usecase = _usecase(tickets, gateway)
+    ticket = await usecase.create_ticket(1, "Ошибка загрузки", "HTTP 502 при сохранении")
+    profile = SolverProfile(
+        id=5,
+        name="Прямой поиск",
+        enabled=SolverEnabled(triage=False, resolve=True),
+        models=SolverModels(ticket_resolution=1, ticket_triage=2, ticket_resolution_cheap=3),
+    )
+
+    result = await usecase.run(ticket.id, profile=profile)
+
+    assert result.status == "answered"
+    assert [citation["path"] for citation in result.citations or []] == ["app/module_0.py"]
+    assert gateway.model_ids == ["model-1"]
+    assert tickets.steps[1]["input"] == {"query_origin": "ticket"}
+    assert tickets.run_models is not None
+    assert tickets.run_models.ticket_triage is None
+    assert tickets.run_models.ticket_resolution_cheap is None
+    terminal = tickets.steps[-1]["output"]
+    assert terminal["refs"] == ["S1"]
+    assert terminal["evidence"]["S1"]["start_line"] == 10
+    assert terminal["evidence"]["S2"]["start_line"] == 11
+
+
+async def test_solver_profile_snapshots_inherited_triage_model_when_dossier_is_empty() -> None:
+    tickets = FakeTickets()
+    gateway = FakeGateway([TRIAGE_JSON])
+    usecase = _usecase(tickets, gateway, retrieval=FakeRetrieval(hits=[]))
+    ticket = await usecase.create_ticket(1, "Ошибка", "Описание ошибки")
+    profile = SolverProfile(
+        id=5,
+        name="Автоматически",
+        enabled=SolverEnabled(),
+        models=SolverModels(ticket_resolution=1),
+    )
+
+    result = await usecase.run(ticket.id, profile=profile)
+
+    assert result.status == "escalated"
+    assert gateway.model_ids == ["model-1"]
+    assert tickets.run_models is not None
+    assert tickets.run_models.model_dump()["ticket_triage"] == {"id": 1, "display_name": "Model 1"}
+    assert tickets.steps[2]["step"] == "resolve"
+    assert tickets.steps[2]["status"] == "skipped"
+    assert tickets.steps[-1]["output"]["evidence"] == {}
+
+
+async def test_solver_failure_trace_records_model_and_refs_without_provider_payload() -> None:
+    class FailingGateway(FakeGateway):
+        def generate_json(self, *args: Any, **kwargs: Any) -> str:
+            raise TimeoutError("provider request contained sensitive data")
+
+    tickets = FakeTickets()
+    usecase = _usecase(tickets, FailingGateway([]))
+    ticket = await usecase.create_ticket(1, "Ошибка", "Описание ошибки")
+    profile = SolverProfile(
+        id=6,
+        name="Прямой поиск",
+        enabled=SolverEnabled(triage=False),
+        models=SolverModels(ticket_resolution=1),
+    )
+
+    with pytest.raises(TimeoutError):
+        await usecase.run(ticket.id, profile=profile)
+
+    failure = tickets.steps[-1]
+    assert failure["step"] == "resolve"
+    assert failure["status"] == "failed"
+    assert failure["model_id"] == 1
+    assert failure["input"]["fragments"] == ["S1", "S2", "S3", "S4"]
+    assert failure["output"] == {
+        "error_type": "TimeoutError",
+        "reason": "The model request timed out",
+    }
+    assert ticket.escalate_reason == "The model request timed out"
 
 
 def test_resolver_instructions_distinguish_operational_causes_and_normal_flows() -> None:

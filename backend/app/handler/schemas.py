@@ -3,6 +3,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.domain.entities import ConfigField
+from app.domain.solver import TicketRun
 
 
 class ConfigSchema(BaseModel):
@@ -271,11 +272,18 @@ class TicketStepOut(BaseModel):
     tokens_out: int | None = None
     cost_usd: float | None = None
     created_at: str | None = None
+    run_id: int | None = None
+    status: str = "completed"
+
+
+class TicketRunIn(BaseModel):
+    profile_id: int | None = Field(default=None, gt=0)
 
 
 class TicketDetailOut(BaseModel):
     ticket: TicketOut
     steps: list[TicketStepOut]
+    runs: list[TicketRun] = Field(default_factory=list)
 
 
 class IndexRunOut(BaseModel):

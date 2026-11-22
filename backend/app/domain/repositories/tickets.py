@@ -1,5 +1,6 @@
 from typing import Any, Protocol
 
+from app.domain.solver import SolverModelSnapshots, SolverProfile, TicketRun
 from app.domain.tickets import Ticket, TicketStats, TicketStep
 
 
@@ -14,6 +15,12 @@ class TicketRepository(Protocol):
 
     async def transition_status(self, ticket_id: int, expected: str, status: str) -> bool: ...
 
+    async def start_run(
+        self, ticket_id: int, expected: str, profile: SolverProfile, models: SolverModelSnapshots
+    ) -> int | None: ...
+
+    async def list_runs(self, ticket_id: int) -> list[TicketRun]: ...
+
     async def update_result(
         self,
         ticket_id: int,
@@ -22,6 +29,7 @@ class TicketRepository(Protocol):
         answer: str | None = None,
         escalate_reason: str | None = None,
         citations: list[dict[str, Any]] | None = None,
+        run_id: int | None = None,
     ) -> Ticket | None: ...
 
     async def add_step(
@@ -35,10 +43,14 @@ class TicketRepository(Protocol):
         tokens_in: int | None = None,
         tokens_out: int | None = None,
         cost_usd: float | None = None,
+        run_id: int | None = None,
+        status: str = "completed",
     ) -> TicketStep: ...
 
     async def list_steps(self, ticket_id: int) -> list[TicketStep]: ...
 
-    async def usage_rows(self, source_id: int) -> list[tuple[str, int | None, int | None, float | None]]: ...
+    async def usage_rows(
+        self, source_id: int
+    ) -> list[tuple[str, int | None, int | None, float | None]]: ...
 
     async def stats(self, source_id: int) -> TicketStats: ...
