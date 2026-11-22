@@ -1,0 +1,85 @@
+[
+  {
+    "title": "Создание доклада и проверка его в списке",
+    "actor": "Докладчик",
+    "steps": [
+      {
+        "action": "Отправить POST /users/login с email и паролем зарегистрированного пользователя",
+        "expected_result": "В теле ответа status равен true, поле token содержит непустой токен."
+      },
+      {
+        "action": "Отправить POST /talks с полями title, start_time, end_time, user_id, event_id, используя токен в заголовке Authorization: Bearer <token>",
+        "expected_result": "Получить id доклада в ответе и статус 200 OK"
+      },
+      {
+        "action": "Отправить GET /events/{event_id}/talks с тем же event_id, используя токен",
+        "expected_result": "В JSON-массиве найти запись с сохранённым id, проверить название и автора, статус 200 OK"
+      }
+    ],
+    "components": [
+      "TalkCreateHandler",
+      "TalkService",
+      "EventGetTalksHandler",
+      "EventService"
+    ],
+    "failure_modes": [
+      "При отрицательном результате входа токен пуст.",
+      "Если end_time не позже start_time, запись нарушает ограничение PostgreSQL."
+    ],
+    "checklist": [
+      "В ответе POST /talks сохранён id.",
+      "В программе выбранного мероприятия этот id соответствует ожидаемому названию и автору."
+    ],
+    "doc_refs": [
+      "docs/user_talks.md"
+    ],
+    "provenance": {
+      "generator": "indexed-material-generator-v1",
+      "model_id": 1,
+      "index_runs": {
+        "code": 1,
+        "documentation": 3
+      },
+      "generated_at": "2026-11-23T01:34:30.3865+03:00",
+      "source_refs": [
+        {
+          "source_id": "S22",
+          "index_type": "documentation",
+          "path": "docs/user_talks.md",
+          "start_line": 5,
+          "end_line": 8,
+          "symbol": null,
+          "section": "Lab5. Как опубликовать доклад и найти его в программе / Вход"
+        },
+        {
+          "source_id": "S20",
+          "index_type": "documentation",
+          "path": "docs/user_talks.md",
+          "start_line": 9,
+          "end_line": 14,
+          "symbol": null,
+          "section": "Lab5. Как опубликовать доклад и найти его в программе / Создание доклада"
+        },
+        {
+          "source_id": "S23",
+          "index_type": "documentation",
+          "path": "docs/user_talks.md",
+          "start_line": 15,
+          "end_line": 18,
+          "symbol": null,
+          "section": "Lab5. Как опубликовать доклад и найти его в программе / Проверка результата"
+        },
+        {
+          "source_id": "S21",
+          "index_type": "documentation",
+          "path": "docs/user_talks.md",
+          "start_line": 1,
+          "end_line": 4,
+          "symbol": null,
+          "section": "Lab5. Как опубликовать доклад и найти его в программе"
+        }
+      ]
+    },
+    "approved": true
+  }
+]
