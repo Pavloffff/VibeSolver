@@ -253,7 +253,7 @@ export const en = {
   'modeScreen.remoteDescription': 'Connect to an existing VibeSolver server',
   'modeScreen.start': 'Start',
   'sources.add': 'New project',
-  'sources.description': 'Bring your repositories and together in one workspace.',
+  'sources.description': 'Manage your repositories and project archives in one workspace.',
   'sources.emptyTitle': 'Start with your first project',
   'sources.empty': 'Add a Git repository or upload a project archive to build your product knowledge base.',
   'sources.listHeading': 'YOUR PROJECTS',
