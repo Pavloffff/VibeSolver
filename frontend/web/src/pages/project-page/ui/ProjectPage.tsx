@@ -4,6 +4,7 @@ import type { ApiClient } from '../../../shared/api/client'
 import type { ImportStatus, ProjectIndexStatus, ProjectIndexType, ProjectModelSelections, ProjectResource, ProjectStats, Source, WorkspaceModel } from '../../../shared/api/types'
 import { useT } from '../../../shared/i18n'
 import { ImportCard, IndexingCard, ResourcesCard, StatsCard } from './ProjectCards'
+import { SourceBrowser } from './SourceBrowser'
 import MarkdownEditor from './MarkdownEditor'
 import type { MarkdownResourceReference } from './MarkdownEditor'
 
@@ -403,6 +404,7 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
         <StatsCard t={t} stats={stats} indexes={indexingStatus?.indexes ?? []} documentationCount={documentation.length} userFlowCount={userFlows.length} />
         <ResourcesCard
           t={t}
+          sourceBrowser={<SourceBrowser key={source.id} sourceId={source.id} api={api} t={t} />}
           documentation={documentation}
           userFlows={userFlows}
           uploading={uploading}

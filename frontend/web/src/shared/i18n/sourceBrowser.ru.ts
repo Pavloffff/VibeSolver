@@ -1,0 +1,18 @@
+export const sourceBrowserRu = {
+  'sourceBrowser.title': 'Исходный код',
+  'sourceBrowser.open': 'Просмотреть исходники',
+  'sourceBrowser.refresh': 'Обновить снимок',
+  'sourceBrowser.root': 'Корень',
+  'sourceBrowser.branch': 'Ветка',
+  'sourceBrowser.noBranch': 'Без ветки',
+  'sourceBrowser.more': 'Загрузить ещё',
+  'sourceBrowser.loading': 'Загружаем исходники…',
+  'sourceBrowser.error': 'Не удалось загрузить исходники.',
+  'sourceBrowser.not_imported': 'Импортируйте проект, чтобы просмотреть исходники.',
+  'sourceBrowser.reimport_required': 'Импортируйте проект повторно, чтобы создать снимок для просмотра.',
+  'sourceBrowser.empty': 'Эта папка пуста.',
+  'sourceBrowser.too_large': 'Размер файла превышает лимит предпросмотра.',
+  'sourceBrowser.binary': 'Предпросмотр бинарного файла недоступен.',
+  'sourceBrowser.unsupported_encoding': 'Файл использует неподдерживаемую кодировку.',
+  'sourceBrowser.unavailable': 'Не удалось прочитать содержимое файла.',
+} as const

@@ -179,3 +179,34 @@
   .issues-model-pickers { min-width: 0; grid-template-columns: 1fr; }
   .issues-log-row { align-items: flex-start; flex-direction: column; }
 }
+.project-navigation { display: flex; gap: 24px; border-bottom: 1px solid var(--border); margin-bottom: 24px; overflow-x: auto; }
+[hidden] { display: none !important; }
+.project-navigation button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--text-muted); padding: 10px 2px; cursor: pointer; white-space: nowrap; }
+.project-navigation button[aria-current="page"] { color: var(--text); border-bottom-color: currentColor; font-weight: 600; }
+.project-navigation button:focus-visible, .issues-page :focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.issues-intake { margin-bottom: 18px; }
+.issues-intake > summary { cursor: pointer; font-weight: 600; padding: 10px 0; }
+.issues-workspace { display: grid; grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.5fr); gap: 18px; align-items: start; }
+.issues-ticket-row { align-items: stretch; flex-direction: column; }
+.issues-ticket-open { justify-content: space-between; }
+.issues-trace ol { padding-left: 20px; }
+.issues-trace li { padding: 8px 0; }
+.issues-trace dl { margin: 8px 0; }
+.issues-trace dl > div { display: grid; grid-template-columns: minmax(100px, 1fr) 2fr; gap: 12px; margin: 4px 0; overflow-wrap: anywhere; }
+.issues-trace dt { color: var(--text-muted); }
+.issues-trace dd { margin: 0; }
+@media (max-width: 800px) { .issues-workspace { grid-template-columns: 1fr; } }
+.issues-workspace-empty { grid-template-columns: 1fr; }
+.issues-run-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 20px 0; }
+.issues-run-controls .generation-model-picker { flex: 1 1 220px; }
+.issues-step-summary { margin: 6px 0; overflow-wrap: anywhere; }
+.issues-mobile-back { display: none; }
+@media (max-width: 800px) { .issues-workspace-selected .issues-queue { display: none; } .issues-mobile-back { display: inline-flex; margin-bottom: 12px; } }
+.issues-trace .issues-step-list { list-style: none; padding: 0; display: grid; gap: 10px; }
+.issues-trace .issues-step { border-left: 3px solid var(--border); background: var(--surface-muted); border-radius: 4px; padding: 10px 12px; min-width: 0; }
+.issues-trace .issues-step-failed { border-left-color: #bd4b4b; }
+.issues-trace .issues-step-completed { border-left-color: #45856b; }
+.issues-step-heading { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+.issues-step-heading span, .issues-step-metrics { color: var(--text-muted); font-size: 12px; }
+.issues-trace dl, .issues-trace dd, .issues-trace ul { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+@media (max-width: 800px) { .issues-trace dl > div { display: block; } .issues-trace dd { margin: 2px 0 8px; } .issues-trace ul { padding-left: 16px; } }

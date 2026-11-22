@@ -1,0 +1,40 @@
+.solver-page { max-width: 1160px; margin-inline: auto; color: var(--text); }
+.solver-page h1 { margin: 0; font-size: 27px; letter-spacing: -.7px; }
+.solver-page h2 { margin: 0; font-size: 17px; letter-spacing: -.25px; }
+.solver-page p { margin: 6px 0 0; color: var(--text-muted); line-height: 1.55; }
+.solver-workspace { padding: 0; margin: 20px 0; min-width: 0; border: 0; }
+.solver-profilebar, .solver-inspector, .solver-flow, .solver-confirm { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.solver-profilebar { display: flex; align-items: end; justify-content: space-between; gap: 18px; flex-wrap: wrap; padding: 18px 20px; }
+.solver-profilebar label { margin: 0; min-width: min(100%, 220px); }
+.solver-actions, .solver-workspace footer { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.solver-name, .solver-confirm { margin: 12px 0; padding: 16px 20px; }
+.solver-name input, .solver-confirm select { max-width: 380px; }
+.solver-flow { margin-top: 16px; overflow: hidden; }
+.solver-flow h2 { padding: 16px 20px; border-bottom: 1px solid var(--border-subtle); }
+.solver-map { position: relative; min-height: 235px; background-color: var(--canvas); background-image: radial-gradient(var(--border) 1px, transparent 1px); background-size: 15px 15px; }
+.solver-wires { position: absolute; inset: 0; width: 100%; height: 100%; }
+.solver-wires path { stroke: var(--text-faint); fill: none; stroke-width: 1.6px; }
+.solver-wires .is-handoff { stroke-dasharray: 4 3; }
+.solver-node { position: absolute; transform: translate(-50%, -50%); border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); text-align: left; padding: 12px; cursor: pointer; box-shadow: 0 2px 5px rgb(0 0 0 / 6%); }
+.solver-node strong { display: block; margin-top: 5px; font-size: 14px; line-height: 1.3; }
+.solver-node[aria-pressed=true] { border-color: var(--accent); outline: 2px solid var(--accent-soft); }
+.solver-node:focus-visible { outline: 3px solid var(--accent); }
+.solver-node-status { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--text-muted); }
+.solver-node-status span { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.solver-node.is-off { border-style: dashed; }
+.solver-node.is-off .solver-node-status span { background: var(--text-faint); }
+.solver-node.is-terminal .solver-node-status span { background: var(--accent); }
+.solver-inspector { margin-top: 12px; padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+.solver-inspector small { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
+.solver-inspector p { font-size: 13px; }
+.solver-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 12px; }
+.solver-toggle input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.solver-controls label:last-child { margin-bottom: 0; }
+.solver-workspace footer { justify-content: flex-end; margin-top: 14px; }
+.solver-workspace footer span { color: var(--text-muted); margin-right: auto; font-size: 13px; }
+@media (max-width: 760px) {
+  .solver-map { display: grid; gap: 10px; padding: 14px; }
+  .solver-map .solver-node { position: static; transform: none; width: 100% !important; }
+  .solver-wires { display: none; }
+  .solver-inspector { grid-template-columns: 1fr; gap: 16px; }
+}

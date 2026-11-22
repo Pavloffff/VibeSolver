@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { getApiClient, getErrorMessage } from '../../../shared/api/client'
 import type { ApiClient } from '../../../shared/api/client'
-import type { ProjectModelSelections, TicketBrief, TicketDetail, TicketStats, WorkspaceModel } from '../../../shared/api/types'
+import type { SolverGraph, TicketBrief, TicketDetail, TicketStats } from '../../../shared/api/types'
 import { useT } from '../../../shared/i18n'
 import type { TranslationKey } from '../../../shared/i18n'
 import { parseTicketText } from '../../../features/issues'
@@ -12,6 +12,8 @@ interface Props {
   projectId: number
   projectName: string
   api?: ApiClient
+  active?: boolean
+  onOpenSolver?: () => void
 }
 
 const STATUS_KEYS: Record<string, TranslationKey> = {
@@ -21,13 +23,25 @@ const STATUS_KEYS: Record<string, TranslationKey> = {
   escalated: 'issues.statusEscalated',
   failed: 'issues.statusFailed',
 }
+const STEP_KEYS: Record<string, TranslationKey> = {
+  triage: 'issues.stepTriage', investigate: 'issues.stepInvestigate', resolve: 'issues.stepResolve',
+  answer: 'issues.stepAnswer', escalate: 'issues.stepEscalate',
+}
+const STEP_STATUS_KEYS: Record<string, TranslationKey> = {
+  completed: 'issues.stepCompleted', skipped: 'issues.stepSkipped', failed: 'issues.stepFailed',
+  running: 'issues.statusRunning', answered: 'issues.statusAnswered', escalated: 'issues.statusEscalated',
+}
+const MODEL_ROLE_KEYS: Record<string, TranslationKey> = {
+  ticket_triage: 'issues.triageModel', ticket_resolution: 'issues.resolutionModel', ticket_resolution_cheap: 'issues.cheapModel',
+}
 
-export default function IssuesPage({ projectId, projectName, api = getApiClient() }: Props) {
-  const { t } = useT()
+export default function IssuesPage({ projectId, projectName, api = getApiClient(), active = true, onOpenSolver }: Props) {
+  const { t, lang } = useT()
+  const [graph, setGraph] = useState<SolverGraph | null>(null)
+  const [indexReady, setIndexReady] = useState<boolean | null>(typeof api.getProjectIndexStatus === 'function' ? null : true)
+  const [profileId, setProfileId] = useState<number | null>(null)
   const [tickets, setTickets] = useState<TicketBrief[]>([])
   const [selected, setSelected] = useState<TicketDetail | null>(null)
-  const [chatModels, setChatModels] = useState<WorkspaceModel[]>([])
-  const [selections, setSelections] = useState<ProjectModelSelections | null>(null)
   const [stats, setStats] = useState<TicketStats | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -35,6 +49,7 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [blockedLogTickets, setBlockedLogTickets] = useState<Record<number, boolean>>({})
+  const selectionRequest = useRef(0)
 
   const updateLogBlocked = useCallback((ticketId: number, blocked: boolean) => {
     setBlockedLogTickets((current) => ({ ...current, [ticketId]: blocked }))
@@ -45,15 +60,33 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
   }, [api, projectId])
 
   useEffect(() => {
+    if (!active || typeof api.getSolverGraph !== 'function') return
+    let cancelled = false
+    setGraph(null)
+    setProfileId(null)
+    void api.getSolverGraph(projectId).then((value) => {
+      if (cancelled) return
+      setGraph(value)
+    }).catch((requestError: unknown) => { if (!cancelled) setError(getErrorMessage(requestError)) })
+    return () => { cancelled = true }
+  }, [active, api, projectId])
+
+  useEffect(() => {
+    if (!active || typeof api.getProjectIndexStatus !== 'function') return
+    let cancelled = false
+    setIndexReady(null)
+    void api.getProjectIndexStatus(projectId).then((status) => { if (!cancelled) setIndexReady(status.ready) }).catch((requestError: unknown) => { if (!cancelled) setError(getErrorMessage(requestError)) })
+    return () => { cancelled = true }
+  }, [active, api, projectId])
+
+  useEffect(() => {
     let cancelled = false
     void refreshTickets().catch((requestError: unknown) => {
       if (!cancelled) setError(getErrorMessage(requestError))
     })
-    void Promise.all([api.listWorkspaceModels(), api.getProjectModelSelections(projectId), api.getTicketStats(projectId)])
-      .then(([models, modelSelections, ticketStats]) => {
+    void api.getTicketStats(projectId)
+      .then((ticketStats) => {
         if (cancelled) return
-        setChatModels(models.filter((model) => model.capabilities.includes('chat')))
-        setSelections(modelSelections)
         setStats(ticketStats)
       })
       .catch((requestError: unknown) => {
@@ -61,14 +94,6 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
       })
     return () => { cancelled = true }
   }, [api, projectId, refreshTickets])
-
-  const changeModel = async (role: 'ticket_triage' | 'ticket_resolution' | 'ticket_resolution_cheap', modelId: number | null) => {
-    try {
-      setSelections(await api.setProjectModelSelection(projectId, role, modelId))
-    } catch (requestError) {
-      setError(getErrorMessage(requestError))
-    }
-  }
 
   const submitTicket = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -79,11 +104,13 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
       const created = await api.createTicket(projectId, title, description)
       setTitle('')
       setDescription('')
+      setProfileId(null)
       await refreshTickets()
       setSelected(await api.getTicket(created.id))
     } catch (createError) {
       setError(getErrorMessage(createError))
     } finally {
+      setProfileId(null)
       setBusy(null)
     }
   }
@@ -128,43 +155,35 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
         setError(t('issues.logsNotReady'))
         return
       }
-      const detail = await api.runTicket(ticketId)
+      const detail = profileId === null ? await api.runTicket(ticketId) : await api.runTicket(ticketId, profileId)
+      setProfileId(null)
       setSelected(detail)
       await Promise.all([refreshTickets(), api.getTicketStats(projectId).then(setStats)])
       setNotice(detail.ticket.status === 'answered' ? t('issues.answerReady') : t('issues.escalatedNotice'))
     } catch (runError) {
       setError(getErrorMessage(runError))
+      try { setSelected(await api.getTicket(ticketId)) } catch { /* keep the visible error */ }
       try { await refreshTickets() } catch { /* keep the visible error */ }
     } finally {
+      setProfileId(null)
       setBusy(null)
     }
   }
 
   const openTicket = async (ticketId: number) => {
+    const request = ++selectionRequest.current
+    setProfileId(null)
+    setSelected(null)
     try {
-      setSelected(await api.getTicket(ticketId))
+      const detail = await api.getTicket(ticketId)
+      if (request === selectionRequest.current) setSelected(detail)
     } catch (requestError) {
-      setError(getErrorMessage(requestError))
+      if (request === selectionRequest.current) setError(getErrorMessage(requestError))
     }
   }
 
   const canRun = (ticketId: number, status: string, hasUnreadyLogs?: boolean) =>
-    status !== 'running' && hasUnreadyLogs !== true && blockedLogTickets[ticketId] !== true
-  const modelPicker = (label: string, role: 'ticket_triage' | 'ticket_resolution' | 'ticket_resolution_cheap', modelId: number | null | undefined) => (
-    <label className="generation-model-picker" key={role}>{label}
-      <select
-        value={modelId ?? ''}
-        disabled={chatModels.length === 0}
-        onChange={(event) => void changeModel(role, event.target.value ? Number(event.target.value) : null)}
-      >
-        <option value="">{t(chatModels.length === 0 ? 'materials.noChatModels' : 'issues.selectModel')}</option>
-        {chatModels.map((model) => (
-          <option key={model.id} value={model.id}>{model.display_name} · {model.provider_name}</option>
-        ))}
-      </select>
-    </label>
-  )
-
+    indexReady === true && (typeof api.getSolverGraph !== 'function' || (graph !== null && graph.profiles.some((profile) => profile.id === (profileId ?? graph.default_profile_id)))) && status !== 'running' && hasUnreadyLogs !== true && blockedLogTickets[ticketId] !== true
   return (
     <div className="issues-page">
       <div className="page-header">
@@ -173,15 +192,12 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
           <h1>{t('project.issues')}</h1>
           <p>{t('issues.pageDescription')}</p>
         </div>
-        <div className="issues-model-pickers">
-          {modelPicker(t('issues.triageModel'), 'ticket_triage', selections?.ticket_triage)}
-          {modelPicker(t('issues.resolutionModel'), 'ticket_resolution', selections?.ticket_resolution)}
-          {modelPicker(t('issues.cheapModel'), 'ticket_resolution_cheap', selections?.ticket_resolution_cheap)}
-        </div>
+        {onOpenSolver && selected === null && <button type="button" className="btn" onClick={onOpenSolver}>{t('solver.title')}</button>}
       </div>
 
       {error !== null && <div className="error page-alert" role="alert">{error}</div>}
       {notice !== null && <div className="success-note models-notice" role="status">{notice}</div>}
+      {indexReady === false && <p className="field-hint">{t('project.finishIndexingBeforeIssues')}</p>}
 
       {stats !== null && (
         <section className="project-card issues-stats" aria-label={t('issues.statsTitle')}>
@@ -195,15 +211,15 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
         </section>
       )}
 
-      <form className="project-card issues-create-form" onSubmit={submitTicket}>
+      <details className="issues-intake" open={tickets.length === 0}><summary>{t('project.addIssue')}</summary><form className="project-card issues-create-form" onSubmit={submitTicket}>
         <label>{t('issues.importTextFile')}<input type="file" accept=".txt,text/plain" onChange={(event) => void importTicketText(event)} /></label>
         <p className="field-hint">{t('issues.importTextHint')}</p>
         <label>{t('issues.titleLabel')}<input required minLength={3} maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} /></label>
         <label>{t('issues.descriptionLabel')}<textarea required minLength={10} maxLength={20000} rows={4} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
         <button type="submit" className="btn btn-primary" disabled={busy !== null}>{busy === 'create' ? t('project.uploading') : `+ ${t('project.addIssue')}`}</button>
-      </form>
+      </form></details>
 
-      <section className="project-card">
+      <div className={`issues-workspace${selected === null ? ' issues-workspace-empty' : ' issues-workspace-selected'}`}><section className="project-card issues-queue">
         <div className="project-card-heading"><div><h2>{t('issues.listTitle')}</h2><p>{t('issues.listHint')}</p></div></div>
         {tickets.length === 0 ? (
           <p className="resource-empty">{t('project.noIssues')}</p>
@@ -211,28 +227,23 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
           <div className="issues-ticket-list">
             {tickets.map((ticket) => (
               <div className="issues-ticket-row" key={ticket.id}>
-                <button type="button" className="issues-ticket-open" onClick={() => void openTicket(ticket.id)}>
+                <button type="button" className="issues-ticket-open" disabled={busy !== null} onClick={() => void openTicket(ticket.id)}>
                   <strong>{ticket.title}</strong>
                   <span className={`badge issue-state-${ticket.status}`}>
                     {t(STATUS_KEYS[ticket.status] ?? 'issues.statusNew' as TranslationKey)}
                   </span>
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={busy !== null || !canRun(ticket.id, ticket.status, ticket.has_unready_log_attachments)}
-                  onClick={() => void runTicket(ticket.id)}
-                >
-                  {busy === `run-${ticket.id}` ? t('issues.running') : ticket.status === 'new' ? t('issues.run') : t('issues.rerun')}
-                </button>
               </div>
             ))}
           </div>
+
+
         )}
       </section>
 
       {selected !== null && (
         <section className="project-card issues-ticket-detail">
+          <button type="button" className="text-button issues-mobile-back" disabled={busy !== null} onClick={() => { selectionRequest.current++; setSelected(null); setProfileId(null) }}>{t('issues.backToQueue')}</button>
           <div className="project-card-heading">
             <div>
               <h2>{selected.ticket.title}</h2>
@@ -245,7 +256,7 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
                 </div>
               )}
             </div>
-            <button type="button" className="text-button" onClick={() => setSelected(null)} aria-label={t('common.cancel')}>×</button>
+            <button type="button" className="text-button" disabled={busy !== null} onClick={() => { selectionRequest.current++; setSelected(null); setProfileId(null) }} aria-label={t('common.cancel')}>×</button>
           </div>
 
           {selected.ticket.status === 'answered' && selected.ticket.answer !== null && (
@@ -286,6 +297,12 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
             </div>
           )}
 
+          <div className="issues-run-controls">
+            {graph !== null && <label className="generation-model-picker">{t('issues.profile')}<select value={profileId ?? ''} onChange={(event) => setProfileId(event.target.value === '' ? null : Number(event.target.value))}><option value="">{t('issues.projectDefault', { name: graph.profiles.find((profile) => profile.id === graph.default_profile_id)?.name ?? t('issues.unavailable') })}</option>{graph.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>}
+            {onOpenSolver && <button type="button" className="text-button" onClick={onOpenSolver}>{t('solver.title')}</button>}
+            <button type="button" className="btn btn-primary" disabled={busy !== null || !canRun(selected.ticket.id, selected.ticket.status, tickets.find((ticket) => ticket.id === selected.ticket.id)?.has_unready_log_attachments)} onClick={() => void runTicket(selected.ticket.id)}>{busy === `run-${selected.ticket.id}` ? t('issues.running') : selected.ticket.status === 'new' ? t('issues.run') : t('issues.rerun')}</button>
+          </div>
+
           <TicketLogAttachments
             ticketId={selected.ticket.id}
             api={api}
@@ -294,20 +311,48 @@ export default function IssuesPage({ projectId, projectName, api = getApiClient(
 
           <details className="issues-trace">
             <summary>{t('issues.trace')}</summary>
-            <ol>
-              {selected.steps.map((step, index) => (
-                <li key={index}>
-                  <strong>{step.step}</strong>
-                  {step.duration_ms > 0 && <span> · {step.duration_ms} ms</span>}
-                  {(step.tokens_in !== null || step.tokens_out !== null) && <span> · {step.tokens_in ?? 0} / {step.tokens_out ?? 0} tokens</span>}
-                  {step.cost_usd !== null && <span> · ${step.cost_usd.toFixed(6)}</span>}
-                  <pre>{JSON.stringify(step.output_data, null, 2)}</pre>
-                </li>
-              ))}
-            </ol>
+            {(selected.runs ?? []).map((run) => <section className="issues-run" key={run.id}>
+              <h4>{run.profile_name} · {STATUS_KEYS[run.status] ? t(STATUS_KEYS[run.status]!) : STEP_STATUS_KEYS[run.status] ? t(STEP_STATUS_KEYS[run.status]!) : run.status}</h4><p>{new Date(run.created_at).toLocaleString(lang)}</p>
+              {run.error && <p role="alert">{run.error}</p>}
+              <dl>{Object.entries(run.models).map(([role, model]) => <div key={role}><dt>{MODEL_ROLE_KEYS[role] ? t(MODEL_ROLE_KEYS[role]!) : role}</dt><dd>{model?.display_name ?? t('issues.unavailable')}</dd></div>)}</dl>
+              <TraceSteps steps={selected.steps.filter((step) => step.run_id === run.id)} models={run.models} />
+            </section>)}
+            {selected.steps.some((step) => step.run_id == null) && <section><h4>{t('issues.historicalRun')}</h4><TraceSteps steps={selected.steps.filter((step) => step.run_id == null)} /></section>}
+            {selected.steps.length === 0 && <p>{t('issues.unavailable')}</p>}
           </details>
         </section>
-      )}
+      )}</div>
     </div>
   )
+}
+
+function ReadableValue({ value }: { value: unknown }) {
+  const { t } = useT()
+  if (value === null || value === undefined) return <span>—</span>
+  if (value === 'disabled_by_profile') return <span>{t('issues.disabledByProfile')}</span>
+  if (Array.isArray(value)) return <ul>{value.map((item, index) => <li key={index}><ReadableValue value={item} /></li>)}</ul>
+  const labels: Record<string, TranslationKey> = { summary: 'issues.fieldSummary', answer: 'issues.answerTitle', reason: 'issues.fieldReason', error: 'issues.stepFailed', category: 'issues.fieldCategory', severity: 'issues.fieldSeverity', evidence: 'issues.sources', refs: 'issues.sources', path: 'issues.fieldPath' }
+  if (typeof value === 'object') return <dl>{Object.entries(value).filter(([key]) => !/password|secret|token|credential|api.?key|authorization/i.test(key)).map(([key, item]) => <div key={key}><dt>{labels[key] ? t(labels[key]!) : key.replaceAll('_', ' ')}</dt><dd><ReadableValue value={item} /></dd></div>)}</dl>
+  return <span>{String(value)}</span>
+}
+
+function TraceSteps({ steps, models }: { steps: TicketDetail['steps']; models?: NonNullable<TicketDetail['runs']>[number]['models'] }) {
+  const { t } = useT()
+  const count = (value: unknown): number | null => typeof value === 'number' ? value : Array.isArray(value) ? value.length : value && typeof value === 'object' ? Object.keys(value).length : null
+  return <ol className="issues-step-list">{steps.map((step, index) => {
+    const fragments = count(step.output_data.fragments)
+    const refs = count(step.output_data.refs)
+    const message = ['summary', 'answer', 'escalate_reason', 'reason', 'error', 'category'].map((key) => step.output_data[key]).find((value) => typeof value === 'string') as string | undefined
+    const summary = message === 'disabled_by_profile' ? t('issues.disabledByProfile') : message
+    return <li key={index} className={`issues-step issues-step-${step.status ?? 'unknown'}`}>
+    <div className="issues-step-heading"><strong>{STEP_KEYS[step.step] ? t(STEP_KEYS[step.step]!) : step.step.replaceAll('_', ' ')}</strong><span>{step.status && STEP_STATUS_KEYS[step.status] ? t(STEP_STATUS_KEYS[step.status]!) : t('issues.unavailable')}</span></div>
+    <div className="issues-step-metrics">{t('issues.model')}: {Object.values(models ?? {}).find((model) => model?.id === step.model_id)?.display_name ?? step.model_id ?? t('issues.unavailable')}
+    {step.status !== 'skipped' && <span> · {t('issues.duration', { value: String(step.duration_ms) })}</span>}
+    <span> · {t('issues.tokenUsage')}: {step.tokens_in ?? '—'} / {step.tokens_out ?? '—'}</span>
+    <span> · {t('issues.stepCost')}: {step.cost_usd === null ? '—' : `$${step.cost_usd.toFixed(6)}`}</span>
+    </div>
+    <p className="issues-step-summary">{[summary, fragments !== null ? t('issues.fragmentsCount', { count: String(fragments) }) : null, refs !== null ? t('issues.refsCount', { count: String(refs) }) : null].filter(Boolean).join(' · ') || (step.status === 'skipped' ? t('issues.stepSkipped') : t('issues.traceDetails'))}</p>
+    <details><summary>{t('issues.traceInput')}</summary><ReadableValue value={step.input_data} /></details>
+    <details><summary>{t('issues.traceOutput')}</summary><ReadableValue value={step.output_data} /></details>
+  </li>})}</ol>
 }

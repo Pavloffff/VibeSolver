@@ -1,6 +1,7 @@
 import { getApiBaseUrl } from '../config'
 import { t } from '../i18n'
 import { getLang } from '../state/settings'
+import type { SourceBrowserFile, SourceBrowserSnapshot, SourceBrowserTree } from './types'
 import type {
   AvailableModel,
   ConnectorInfo,
@@ -14,6 +15,9 @@ import type {
   ProjectResource,
   ProjectStats,
   Source,
+  SolverGraph,
+  SolverProfile,
+  SolverProfileInput,
   TicketBrief,
   TicketStats,
   TicketDetail,
@@ -302,6 +306,26 @@ export class ApiClient {
     return this.request<ProjectModelSelections>(`/api/v1/models/projects/${sourceId}/selections`)
   }
 
+  getSolverGraph(sourceId: number): Promise<SolverGraph> {
+    return this.request(`/api/v1/sources/${sourceId}/solver-graph`)
+  }
+
+  createSolverProfile(sourceId: number, input: SolverProfileInput): Promise<SolverProfile> {
+    return this.request(`/api/v1/sources/${sourceId}/solver-profiles`, { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  updateSolverProfile(sourceId: number, profileId: number, input: SolverProfileInput): Promise<SolverProfile> {
+    return this.request(`/api/v1/sources/${sourceId}/solver-profiles/${profileId}`, { method: 'PUT', body: JSON.stringify(input) })
+  }
+
+  deleteSolverProfile(sourceId: number, profileId: number, replacementId?: number): Promise<void> {
+    const query = replacementId === undefined ? '' : `?replacement_id=${replacementId}`
+    return this.request(`/api/v1/sources/${sourceId}/solver-profiles/${profileId}${query}`, { method: 'DELETE' })
+  }
+
+  setDefaultSolverProfile(sourceId: number, profileId: number): Promise<void> {
+    return this.request(`/api/v1/sources/${sourceId}/solver-profiles/${profileId}/default`, { method: 'PUT' })
+  }
   createTicket(sourceId: number, title: string, description: string): Promise<TicketBrief> {
     return this.request<TicketBrief>(`/api/v1/sources/${sourceId}/tickets`, {
       method: 'POST', body: JSON.stringify({ title, description }),
@@ -348,9 +372,9 @@ export class ApiClient {
     )
   }
 
-  runTicket(ticketId: number): Promise<TicketDetail> {
+  runTicket(ticketId: number, profileId?: number): Promise<TicketDetail> {
     return this.request<TicketDetail>(`/api/v1/tickets/${ticketId}/run`, {
-      method: 'POST', body: JSON.stringify({}),
+      method: 'POST', body: JSON.stringify(profileId === undefined ? {} : { profile_id: profileId }),
     })
   }
 
@@ -362,6 +386,21 @@ export class ApiClient {
 
   async checkHealth(): Promise<void> {
     await this.request<unknown>('/health')
+  }
+
+  getSourceBrowserSnapshot(sourceId: number, signal?: AbortSignal): Promise<SourceBrowserSnapshot> {
+    return this.request(`/api/v1/sources/${sourceId}/source-browser`, { signal })
+  }
+
+  getSourceBrowserTree(sourceId: number, snapshotId: number, branch: string, folder: string, cursor: string | null, signal?: AbortSignal): Promise<SourceBrowserTree> {
+    const query = new URLSearchParams({ branch, folder })
+    if (cursor !== null) query.set('cursor', cursor)
+    return this.request(`/api/v1/sources/${sourceId}/source-browser/${snapshotId}/tree?${query}`, { signal })
+  }
+
+  getSourceBrowserFile(sourceId: number, snapshotId: number, branch: string, path: string, signal?: AbortSignal): Promise<SourceBrowserFile> {
+    const query = new URLSearchParams({ branch, path })
+    return this.request(`/api/v1/sources/${sourceId}/source-browser/${snapshotId}/file?${query}`, { signal })
   }
 }
 

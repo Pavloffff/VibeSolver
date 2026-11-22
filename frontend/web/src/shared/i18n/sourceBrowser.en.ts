@@ -1,0 +1,18 @@
+export const sourceBrowserEn = {
+  'sourceBrowser.title': 'Source code',
+  'sourceBrowser.open': 'Browse source code',
+  'sourceBrowser.refresh': 'Refresh snapshot',
+  'sourceBrowser.root': 'Root',
+  'sourceBrowser.branch': 'Branch',
+  'sourceBrowser.noBranch': 'Without a branch',
+  'sourceBrowser.more': 'Load more',
+  'sourceBrowser.loading': 'Loading source code…',
+  'sourceBrowser.error': 'Could not load source code.',
+  'sourceBrowser.not_imported': 'Import the project to browse its source code.',
+  'sourceBrowser.reimport_required': 'Import the project again to create a browsable snapshot.',
+  'sourceBrowser.empty': 'This folder is empty.',
+  'sourceBrowser.too_large': 'This file exceeds the preview size limit.',
+  'sourceBrowser.binary': 'This is a binary file. A text preview is unavailable.',
+  'sourceBrowser.unsupported_encoding': 'This file uses an unsupported text encoding.',
+  'sourceBrowser.unavailable': 'The file contents could not be read.',
+}

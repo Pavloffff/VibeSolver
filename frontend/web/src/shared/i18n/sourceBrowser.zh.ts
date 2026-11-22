@@ -1,0 +1,18 @@
+export const sourceBrowserZh = {
+  'sourceBrowser.title': '源代码',
+  'sourceBrowser.open': '浏览源代码',
+  'sourceBrowser.refresh': '刷新快照',
+  'sourceBrowser.root': '根目录',
+  'sourceBrowser.branch': '分支',
+  'sourceBrowser.noBranch': '无分支',
+  'sourceBrowser.more': '加载更多',
+  'sourceBrowser.loading': '正在加载源代码…',
+  'sourceBrowser.error': '无法加载源代码。',
+  'sourceBrowser.not_imported': '请先导入项目，然后浏览源代码。',
+  'sourceBrowser.reimport_required': '请重新导入项目以创建可浏览的快照。',
+  'sourceBrowser.empty': '此文件夹为空。',
+  'sourceBrowser.too_large': '此文件超出预览大小限制。',
+  'sourceBrowser.binary': '无法预览二进制文件。',
+  'sourceBrowser.unsupported_encoding': '此文件使用不受支持的文本编码。',
+  'sourceBrowser.unavailable': '无法读取文件内容。',
+} as const

@@ -164,6 +164,8 @@ export interface Ticket {
 }
 
 export interface TicketStep {
+  run_id?: number | null
+  status?: string
   step: string
   input_data: Record<string, unknown>
   output_data: Record<string, unknown>
@@ -178,6 +180,7 @@ export interface TicketStep {
 export interface TicketDetail {
   ticket: Ticket
   steps: TicketStep[]
+  runs?: SolverRun[]
 }
 
 export type TicketLogAttachmentStatus = 'queued' | 'processing' | 'ready' | 'failed'
@@ -197,4 +200,51 @@ export interface OllamaPullProgress {
   progress?: number | null
   model_id?: string
   error?: string
+}
+export interface SolverProfileInput {
+  name: string
+  enabled: { triage: boolean; resolve: boolean }
+  models: { ticket_resolution: number | null; ticket_triage: number | null; ticket_resolution_cheap: number | null }
+}
+export interface SolverProfile extends SolverProfileInput { id: number }
+export interface SolverGraph {
+  nodes: { id: string; optional: boolean }[]
+  edges: { source: string; target: string }[]
+  profiles: SolverProfile[]
+  default_profile_id: number
+}
+export interface SolverRun {
+  id: number
+  profile_id: number
+  profile_name: string
+  enabled: { triage: boolean; resolve: boolean }
+  models: Record<'ticket_resolution' | 'ticket_triage' | 'ticket_resolution_cheap', { id: number; display_name: string } | null>
+  status: string
+  created_at: string
+  finished_at: string | null
+  error: string | null
+}
+
+export interface SourceBrowserSnapshot {
+  status: 'ready' | 'not_imported' | 'reimport_required'
+  snapshot_id: number | null
+  branches: string[]
+}
+
+export interface SourceBrowserEntry {
+  name: string
+  path: string
+  kind: 'directory' | 'file'
+  size_bytes: number | null
+}
+
+export interface SourceBrowserTree {
+  entries: SourceBrowserEntry[]
+  next_cursor: string | null
+}
+
+export interface SourceBrowserFile {
+  path: string
+  status: 'ready' | 'too_large' | 'binary' | 'unsupported_encoding' | 'unavailable'
+  content: string | null
 }

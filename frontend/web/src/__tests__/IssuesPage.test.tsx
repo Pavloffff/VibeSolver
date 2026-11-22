@@ -69,11 +69,10 @@ describe('IssuesPage', () => {
     renderPage(api)
 
     expect(await screen.findByText('Не работает вход')).toBeInTheDocument()
-    expect(await screen.findByLabelText('Модель триажа')).toBeInTheDocument()
-    expect(screen.getByLabelText('Модель решения')).toBeInTheDocument()
-    expect(screen.getByLabelText('Недорогая модель для простых обращений')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Модель триажа')).not.toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Статистика обращений' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Запустить агентов' }))
+    fireEvent.click(screen.getByRole('button', { name: /Не работает вход/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Запустить снова' }))
 
     await waitFor(() => expect(api.runTicket).toHaveBeenCalledWith(5))
     expect(await screen.findByText('Ответ')).toBeInTheDocument()
@@ -122,7 +121,7 @@ describe('IssuesPage', () => {
     expect(api.runTicket).not.toHaveBeenCalled()
   })
 
-  it('disables running pending-log tickets before opening their details', async () => {
+  it('disables running pending-log tickets after opening their details', async () => {
     const pendingTicket = { ...TICKET, has_unready_log_attachments: true }
     const api = {
       listTickets: vi.fn().mockResolvedValue([pendingTicket]),
@@ -135,8 +134,8 @@ describe('IssuesPage', () => {
     }
     renderPage(api)
 
-    expect(await screen.findByText('Не работает вход')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Запустить агентов' })).toBeDisabled()
+    fireEvent.click(await screen.findByRole('button', { name: /Не работает вход/ }))
+    expect(await screen.findByRole('button', { name: 'Запустить снова' })).toBeDisabled()
     expect(api.runTicket).not.toHaveBeenCalled()
   })
 
@@ -231,4 +230,96 @@ describe('IssuesPage', () => {
     expect(await screen.findByText('Эскалировано инженеру')).toBeInTheDocument()
     expect(screen.getByText('В индексах нет данных о этой версии.')).toBeInTheDocument()
   })
+})
+
+it('shows a readable trace without raw JSON', async () => {
+  const api = {
+    listTickets: vi.fn().mockResolvedValue([TICKET]),
+    listWorkspaceModels: vi.fn().mockResolvedValue([]),
+    getProjectModelSelections: vi.fn().mockResolvedValue({}),
+    getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
+    getTicket: vi.fn().mockResolvedValue(DETAIL),
+    listTicketLogAttachments: vi.fn().mockResolvedValue([]),
+  }
+  renderPage(api)
+  fireEvent.click(await screen.findByRole('button', { name: /Не работает вход/ }))
+  await screen.findByText('Трассировка агентов')
+  expect(document.querySelector('.issues-trace pre')).not.toBeInTheDocument()
+})
+
+
+it('blocks runs when project indexes are not ready', async () => {
+  const api = {
+    listTickets: vi.fn().mockResolvedValue([TICKET]),
+    listWorkspaceModels: vi.fn().mockResolvedValue([]),
+    getProjectModelSelections: vi.fn().mockResolvedValue({}),
+    getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
+    getProjectIndexStatus: vi.fn().mockResolvedValue({ ready: false, indexes: [] }),
+    getTicket: vi.fn().mockResolvedValue(DETAIL),
+    listTicketLogAttachments: vi.fn().mockResolvedValue([]),
+  }
+  renderPage(api)
+  expect(await screen.findByText('Импортируйте проект и завершите все три индексации, чтобы открыть обращения.')).toBeInTheDocument()
+  fireEvent.click(await screen.findByRole('button', { name: /Не работает вход/ }))
+  expect(await screen.findByRole('button', { name: 'Запустить снова' })).toBeDisabled()
+})
+
+it('runs with the chosen profile without changing the default', async () => {
+  const api = {
+    listTickets: vi.fn().mockResolvedValue([TICKET]),
+    listWorkspaceModels: vi.fn().mockResolvedValue([]),
+    getProjectModelSelections: vi.fn().mockResolvedValue({}),
+    getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
+    getSolverGraph: vi.fn().mockResolvedValue({ default_profile_id: 1, profiles: [{ id: 1, name: 'Standard' }, { id: 2, name: 'Deep' }], nodes: [], edges: [] }),
+    getTicket: vi.fn().mockResolvedValue(DETAIL),
+    listTicketLogAttachments: vi.fn().mockResolvedValue([]),
+    runTicket: vi.fn().mockResolvedValue(DETAIL),
+  }
+  renderPage(api)
+  fireEvent.click(await screen.findByRole('button', { name: /Не работает вход/ }))
+  fireEvent.change(await screen.findByLabelText('Профиль запуска'), { target: { value: '2' } })
+  fireEvent.click(await screen.findByRole('button', { name: 'Запустить снова' }))
+  await waitFor(() => expect(api.runTicket).toHaveBeenCalledWith(5, 2))
+})
+
+it('uses project default and clears a one-run override after running and changing tickets', async () => {
+  const other = { ...TICKET, id: 6, title: 'Другой вопрос' }
+  const api = {
+    listTickets: vi.fn().mockResolvedValue([TICKET, other]),
+    getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
+    getSolverGraph: vi.fn().mockResolvedValue({ default_profile_id: 1, profiles: [{ id: 1, name: 'Standard' }, { id: 2, name: 'Deep' }], nodes: [], edges: [] }),
+    getTicket: vi.fn().mockImplementation((id: number) => Promise.resolve({ ...DETAIL, ticket: { ...DETAIL.ticket, id, title: id === 5 ? TICKET.title : other.title } })),
+    listTicketLogAttachments: vi.fn().mockResolvedValue([]),
+    runTicket: vi.fn().mockResolvedValue(DETAIL),
+  }
+  renderPage(api)
+  fireEvent.click(await screen.findByRole('button', { name: /Не работает вход/ }))
+  const profile = await screen.findByLabelText('Профиль запуска')
+  expect(profile).toHaveValue('')
+  fireEvent.click(screen.getByRole('button', { name: 'Запустить снова' }))
+  await waitFor(() => expect(api.runTicket).toHaveBeenCalledWith(5))
+  fireEvent.change(profile, { target: { value: '2' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Запустить снова' }))
+  await waitFor(() => expect(api.runTicket).toHaveBeenCalledWith(5, 2))
+  await waitFor(() => expect(profile).toHaveValue(''))
+  fireEvent.change(profile, { target: { value: '2' } })
+  fireEvent.click(screen.getByRole('button', { name: /Другой вопрос/ }))
+  await waitFor(() => expect(screen.getByLabelText('Профиль запуска')).toHaveValue(''))
+})
+
+it('summarizes evidence and refreshes the failed run detail', async () => {
+  const failedDetail = { ...DETAIL, steps: [{ ...DETAIL.steps[0], step: 'investigate', output_data: { fragments: 3, refs: ['S1', 'S2'] }, tokens_in: 4, tokens_out: null }] }
+  const api = {
+    listTickets: vi.fn().mockResolvedValue([TICKET]),
+    getTicketStats: vi.fn().mockResolvedValue({ total: 0, by_status: {}, completed: 0, autoresolve_rate: 0, tokens_in: 0, tokens_out: 0, cost_usd: null, avg_cost_usd: null, avg_tokens_per_ticket: 0 }),
+    getTicket: vi.fn().mockResolvedValueOnce(DETAIL).mockResolvedValue(failedDetail),
+    listTicketLogAttachments: vi.fn().mockResolvedValue([]),
+    runTicket: vi.fn().mockRejectedValue(new Error('failed')),
+  }
+  renderPage(api)
+  fireEvent.click(await screen.findByRole('button', { name: /Не работает вход/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Запустить снова' }))
+  expect(await screen.findByText(/Фрагментов: 3/)).toBeInTheDocument()
+  expect(screen.getByText(/4 \/ —/)).toBeInTheDocument()
+  expect(api.getTicket).toHaveBeenCalledTimes(2)
 })

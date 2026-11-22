@@ -192,7 +192,7 @@ td:last-child .btn + .btn { margin-left: 6px; }
 .page-alert { margin: 0 0 18px; border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--danger) 7%, var(--surface)); padding: 12px 14px; }
 
 label { display: block; margin-bottom: 16px; color: var(--text); font-size: 13px; font-weight: 600; }
-input:not([type='radio']):not([type='file']), select {
+input:not([type='radio']):not([type='file']):not([type='checkbox']), select {
   display: block;
   width: 100%;
   min-height: 38px;

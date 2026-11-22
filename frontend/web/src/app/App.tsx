@@ -4,6 +4,7 @@ import SettingsPage from '../pages/settings-page'
 import SourcesPage from '../pages/sources-page'
 import ProjectPage from '../pages/project-page'
 import IssuesPage from '../pages/issues-page'
+import SolverGraphPage from '../pages/solver-graph-page'
 import ModelsPage from '../pages/models-page'
 import { getApiBaseUrl } from '../shared/config'
 import { useT } from '../shared/i18n'
@@ -12,7 +13,7 @@ import type { AppSettings, Theme } from '../shared/state/settings'
 import type { Source } from '../shared/api/types'
 
 type Tab = 'sources' | 'models' | 'settings'
-type ProjectSection = 'overview' | 'issues'
+type ProjectSection = 'overview' | 'issues' | 'solver'
 
 function tabClass(active: boolean): string {
   return active ? 'side-link side-link-active' : 'side-link'
@@ -123,7 +124,7 @@ export default function App() {
           <div className="breadcrumb">
             <button type="button" className="breadcrumb-link" onClick={() => { setTab('sources'); setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }}>{t('app.workspace')}</button>
             {tab === 'settings' ? <><span className="breadcrumb-separator">/</span><strong>{t('common.settings')}</strong></> : tab === 'models' ? <><span className="breadcrumb-separator">/</span><strong>{t('models.title')}</strong></> : <>
-              {selectedProjectId !== null && <><span className="breadcrumb-separator">/</span><button type="button" className="breadcrumb-link" onClick={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }}>{t('common.sources')}</button><span className="breadcrumb-separator">/</span>{projectSection === 'issues' ? <><button type="button" className="breadcrumb-link" onClick={() => setProjectSection('overview')}>{selectedProjectName ?? t('project.title')}</button><span className="breadcrumb-separator">/</span><strong>{t('project.issues')}</strong></> : <strong>{selectedProjectName ?? t('project.title')}</strong>}</>}
+              {selectedProjectId !== null && <><span className="breadcrumb-separator">/</span><button type="button" className="breadcrumb-link" onClick={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }}>{t('common.sources')}</button><span className="breadcrumb-separator">/</span><strong>{selectedProjectName ?? t('project.title')}</strong></>}
               {selectedProjectId === null && <><span className="breadcrumb-separator">/</span><strong>{t('common.sources')}</strong></>}
             </>}
           </div>
@@ -137,11 +138,16 @@ export default function App() {
               onProjectCreated={(source: Source, importError) => { setProjectLaunchError(importError ?? null); setSelectedProjectName(source.name); setProjectSection('overview'); setSelectedProjectId(source.id) }}
             />
           ) : (
-            projectSection === 'issues' ? (
-              <IssuesPage projectId={selectedProjectId} projectName={selectedProjectName ?? t('project.title')} />
-            ) : (
-              <ProjectPage key={selectedProjectId} sourceId={selectedProjectId} launchError={projectLaunchError} experimental={experimental} onNameChange={setSelectedProjectName} onOpenIssues={() => setProjectSection('issues')} onBack={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }} />
-            )
+            <div key={selectedProjectId}>
+              <nav className="project-navigation" aria-label={t('project.navigation')}>
+                <button type="button" aria-current={projectSection === 'overview' ? 'page' : undefined} onClick={() => setProjectSection('overview')}>{t('project.overview')}</button>
+                <button type="button" aria-current={projectSection === 'issues' ? 'page' : undefined} onClick={() => setProjectSection('issues')}>{t('project.issues')}</button>
+                <button type="button" aria-current={projectSection === 'solver' ? 'page' : undefined} onClick={() => setProjectSection('solver')}>{t('solver.title')}</button>
+              </nav>
+              <div hidden={projectSection !== 'overview'}><ProjectPage sourceId={selectedProjectId} launchError={projectLaunchError} experimental={experimental} onNameChange={setSelectedProjectName} onOpenIssues={() => setProjectSection('issues')} onBack={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }} /></div>
+              <div hidden={projectSection !== 'issues'}><IssuesPage projectId={selectedProjectId} projectName={selectedProjectName ?? t('project.title')} active={projectSection === 'issues'} onOpenSolver={() => setProjectSection('solver')} /></div>
+              {projectSection === 'solver' && <SolverGraphPage projectId={selectedProjectId} />}
+            </div>
           )
         ) : (
           <SettingsPage

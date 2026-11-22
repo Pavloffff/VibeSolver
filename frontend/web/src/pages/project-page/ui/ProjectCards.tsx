@@ -71,6 +71,7 @@ export function StatsCard({ t, stats, indexes, documentationCount, userFlowCount
 
 export function ResourcesCard({
   t,
+  sourceBrowser,
   documentation,
   userFlows,
   uploading,
@@ -91,6 +92,7 @@ export function ResourcesCard({
   generationNoticeCategory,
 }: {
   t: Translate
+  sourceBrowser?: ReactNode
   documentation: ProjectResource[]
   userFlows: ProjectResource[]
   uploading: ResourceCategory | null
@@ -126,6 +128,7 @@ export function ResourcesCard({
   return (
     <section className="project-card resources-card">
       <div className="project-card-heading"><div><h2>{t('project.context')}</h2><p>{t('project.contextHint')}</p></div></div>
+      {sourceBrowser}
       {generationEnabled && <label className="generation-model-picker">{t('materials.generationModel')}<select value={generationModelId ?? ''} disabled={generationModels.length === 0} onChange={(event) => onGenerationModelChange(event.target.value ? Number(event.target.value) : null)}>
         <option value="">{t(generationModels.length === 0 ? 'materials.noChatModels' : 'materials.selectGenerationModel')}</option>
         {generationModels.map((model) => <option key={model.id} value={model.id}>{model.display_name} · {model.provider_name}</option>)}
