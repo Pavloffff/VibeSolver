@@ -20,13 +20,13 @@ dependencies = [
     "dulwich==1.2.20",
     "python-multipart==0.0.31",
     "langgraph==1.2.22",
+    "httpx==0.28.1",
 ]
 
 [dependency-groups]
 dev = [
     "pytest==9.2.0",
     "pytest-asyncio==1.4.1.post1",
-    "httpx==0.28.1",
     "ruff==0.17.3",
     "mypy==2.4.1",
     "boto3-stubs[s3]==1.43.123",

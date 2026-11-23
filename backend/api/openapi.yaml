@@ -1294,6 +1294,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tickets/archive-preview:
+    post:
+      tags:
+      - tickets
+      summary: Preview Ticket Archive
+      operationId: preview_ticket_archive_api_v1_tickets_archive_preview_post
+      requestBody:
+        content:
+          application/zip:
+            schema:
+              type: string
+              format: binary
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketArchivePreviewOut'
+        '413':
+          description: ZIP archive exceeds the upload limit
+        '415':
+          description: Unsupported content type
+        '422':
+          description: ZIP archive must contain exactly one UTF-8 TXT file
   /api/v1/tickets/{ticket_id}:
     get:
       tags:
@@ -1455,13 +1481,11 @@ paths:
           type: integer
           title: Ticket Id
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              anyOf:
-              - $ref: '#/components/schemas/TicketRunIn'
-              - type: 'null'
-              title: Payload
+              $ref: '#/components/schemas/TicketRunIn'
       responses:
         '200':
           description: Successful Response
@@ -1469,6 +1493,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketDetailOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tickets/{ticket_id}/localize:
+    post:
+      tags:
+      - tickets
+      summary: Localize Ticket
+      operationId: localize_ticket_api_v1_tickets__ticket_id__localize_post
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Ticket Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResultTranslations'
         '422':
           description: Validation Error
           content:
@@ -1589,15 +1639,6 @@ paths:
         schema:
           type: integer
           title: Profile Id
-      - name: replacement_id
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: integer
-            exclusiveMinimum: 0
-          - type: 'null'
-          title: Replacement Id
       responses:
         '204':
           description: Successful Response
@@ -1613,6 +1654,7 @@ paths:
       - solver
       summary: Set Default Solver Profile
       operationId: set_default_solver_profile_api_v1_sources__source_id__solver_profiles__profile_id__default_put
+      deprecated: true
       parameters:
       - name: source_id
         in: path
@@ -1626,6 +1668,201 @@ paths:
         schema:
           type: integer
           title: Profile Id
+      responses:
+        '410':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sources/{source_id}/diagnostic-tools:
+    get:
+      tags:
+      - solver
+      summary: Project Tools
+      operationId: project_tools_api_v1_sources__source_id__diagnostic_tools_get
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectToolsOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - solver
+      summary: Set Project Tools
+      operationId: set_project_tools_api_v1_sources__source_id__diagnostic_tools_put
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectTools'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectToolsOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tickets/{ticket_id}/diagnostic-options:
+    get:
+      tags:
+      - solver
+      summary: Ticket Options
+      operationId: ticket_options_api_v1_tickets__ticket_id__diagnostic_options_get
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Ticket Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebConsent'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - solver
+      summary: Set Ticket Options
+      operationId: set_ticket_options_api_v1_tickets__ticket_id__diagnostic_options_put
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Ticket Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebConsent'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebConsent'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tickets/{ticket_id}/ui-observation:
+    get:
+      tags:
+      - solver
+      summary: Ticket Observation
+      operationId: ticket_observation_api_v1_tickets__ticket_id__ui_observation_get
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Ticket Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservationOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - solver
+      summary: Set Ticket Observation
+      operationId: set_ticket_observation_api_v1_tickets__ticket_id__ui_observation_put
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Ticket Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UiObservation'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservationOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - solver
+      summary: Remove Ticket Observation
+      operationId: remove_ticket_observation_api_v1_tickets__ticket_id__ui_observation_delete
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Ticket Id
       responses:
         '204':
           description: Successful Response
@@ -1932,6 +2169,27 @@ components:
       - status
       - finished_at
       title: LastImportOut
+    LocalizedTicketResult:
+      properties:
+        en:
+          type: string
+          minLength: 1
+          title: En
+        ru:
+          type: string
+          minLength: 1
+          title: Ru
+        zh:
+          type: string
+          minLength: 1
+          title: Zh
+      additionalProperties: false
+      type: object
+      required:
+      - en
+      - ru
+      - zh
+      title: LocalizedTicketResult
     MaterialGenerationIn:
       properties:
         category:
@@ -2155,6 +2413,16 @@ components:
       required:
       - model_id
       title: ModelSelectionUpdate
+    ObservationOut:
+      properties:
+        observation:
+          anyOf:
+          - $ref: '#/components/schemas/UiObservation'
+          - type: 'null'
+      type: object
+      required:
+      - observation
+      title: ObservationOut
     OllamaPullIn:
       properties:
         model_id:
@@ -2164,6 +2432,25 @@ components:
       required:
       - model_id
       title: OllamaPullIn
+    PreviousTicketResult:
+      properties:
+        status:
+          type: string
+          title: Status
+        answer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Answer
+        escalate_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Escalate Reason
+      type: object
+      required:
+      - status
+      title: PreviousTicketResult
     ProjectIndexStatusOut:
       properties:
         ready:
@@ -2211,6 +2498,61 @@ components:
       - name
       - config
       title: ProjectResource
+    ProjectTools:
+      properties:
+        ui_probe:
+          anyOf:
+          - type: string
+            maxLength: 150
+          - type: 'null'
+          title: Ui Probe
+        web_provider:
+          anyOf:
+          - type: string
+            maxLength: 150
+          - type: 'null'
+          title: Web Provider
+        allow_web_search:
+          type: boolean
+          title: Allow Web Search
+          default: false
+      additionalProperties: false
+      type: object
+      title: ProjectTools
+    ProjectToolsOut:
+      properties:
+        ui_probe:
+          anyOf:
+          - type: string
+            maxLength: 150
+          - type: 'null'
+          title: Ui Probe
+        web_provider:
+          anyOf:
+          - type: string
+            maxLength: 150
+          - type: 'null'
+          title: Web Provider
+        allow_web_search:
+          type: boolean
+          title: Allow Web Search
+          default: false
+        available_ui_probes:
+          items:
+            type: string
+          type: array
+          title: Available Ui Probes
+        available_web_providers:
+          items:
+            type: string
+          type: array
+          title: Available Web Providers
+      additionalProperties: false
+      type: object
+      required:
+      - available_ui_probes
+      - available_web_providers
+      title: ProjectToolsOut
     ProviderAvailableModelOut:
       properties:
         provider_model_id:
@@ -2430,7 +2772,32 @@ components:
           type: boolean
           title: Resolve
           default: true
-      additionalProperties: false
+        flow:
+          type: boolean
+          title: Flow
+          default: false
+        logs:
+          type: boolean
+          title: Logs
+          default: false
+        code:
+          type: boolean
+          title: Code
+          default: false
+        ui:
+          type: boolean
+          title: Ui
+          default: false
+        web:
+          type: boolean
+          title: Web
+          default: false
+        review:
+          type: boolean
+          title: Review
+          default: false
+      additionalProperties:
+        type: boolean
       type: object
       title: SolverEnabled
     SolverGraphOut:
@@ -2451,14 +2818,13 @@ components:
           type: array
           title: Profiles
         default_profile_id:
-          type: integer
+          type: 'null'
           title: Default Profile Id
       type: object
       required:
       - nodes
       - edges
       - profiles
-      - default_profile_id
       title: SolverGraphOut
     SolverModelSnapshot:
       properties:
@@ -2737,6 +3103,15 @@ components:
           title: Resources
       type: object
       title: SourceUpdate
+    TicketArchivePreviewOut:
+      properties:
+        text:
+          type: string
+          title: Text
+      type: object
+      required:
+      - text
+      title: TicketArchivePreviewOut
     TicketBriefOut:
       properties:
         id:
@@ -2768,6 +3143,11 @@ components:
         source_ref:
           type: string
           title: Source Ref
+        label:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Label
         path:
           type: string
           title: Path
@@ -2916,6 +3296,15 @@ components:
             $ref: '#/components/schemas/TicketCitationOut'
           type: array
           title: Citations
+        localized_result:
+          anyOf:
+          - $ref: '#/components/schemas/LocalizedTicketResult'
+          - type: 'null'
+        english_result:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: English Result
         created_at:
           anyOf:
           - type: string
@@ -2934,6 +3323,34 @@ components:
       - description
       - status
       title: TicketOut
+    TicketRerunContext:
+      properties:
+        comment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Comment
+        previous_result:
+          $ref: '#/components/schemas/PreviousTicketResult'
+      type: object
+      required:
+      - previous_result
+      title: TicketRerunContext
+    TicketResultTranslations:
+      properties:
+        localized_result:
+          anyOf:
+          - $ref: '#/components/schemas/LocalizedTicketResult'
+          - type: 'null'
+        english_result:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: English Result
+      type: object
+      required:
+      - localized_result
+      title: TicketResultTranslations
     TicketRun:
       properties:
         id:
@@ -2967,6 +3384,10 @@ components:
           - type: string
           - type: 'null'
           title: Error
+        rerun_context:
+          anyOf:
+          - $ref: '#/components/schemas/TicketRerunContext'
+          - type: 'null'
       type: object
       required:
       - id
@@ -2980,12 +3401,19 @@ components:
     TicketRunIn:
       properties:
         profile_id:
-          anyOf:
-          - type: integer
-            exclusiveMinimum: 0.0
-          - type: 'null'
+          type: integer
+          exclusiveMinimum: 0.0
           title: Profile Id
+          description: ID of the Solver profile selected for this run.
+        comment:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Comment
       type: object
+      required:
+      - profile_id
       title: TicketRunIn
     TicketStatsOut:
       properties:
@@ -3091,6 +3519,54 @@ components:
       - output_data
       - duration_ms
       title: TicketStepOut
+    UiObservation:
+      properties:
+        role:
+          type: string
+          maxLength: 64
+          minLength: 1
+          pattern: ^[a-z][a-z0-9-]*$
+          title: Role
+        name:
+          type: string
+          maxLength: 180
+          title: Name
+        width:
+          type: number
+          maximum: 1000000.0
+          minimum: 0.0
+          title: Width
+        height:
+          type: number
+          maximum: 1000000.0
+          minimum: 0.0
+          title: Height
+        visible:
+          type: boolean
+          title: Visible
+        enabled:
+          type: boolean
+          title: Enabled
+        checked:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Checked
+        observed_at:
+          type: string
+          format: date-time
+          title: Observed At
+      additionalProperties: false
+      type: object
+      required:
+      - role
+      - name
+      - width
+      - height
+      - visible
+      - enabled
+      - observed_at
+      title: UiObservation
     UploadOut:
       properties:
         upload_key:
@@ -3126,3 +3602,13 @@ components:
       - msg
       - type
       title: ValidationError
+    WebConsent:
+      properties:
+        use_web_search:
+          type: boolean
+          title: Use Web Search
+      additionalProperties: false
+      type: object
+      required:
+      - use_web_search
+      title: WebConsent

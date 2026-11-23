@@ -1,7 +1,6 @@
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapter.repositories.solver import SOLVER_MODEL_ROLES, SolverSqlRepository
 from app.domain.model_provider_entities import (
     ProviderConnection,
     ProviderCredentials,
@@ -9,6 +8,7 @@ from app.domain.model_provider_entities import (
     WorkspaceModelEntry,
 )
 from app.domain.models import ModelProviderConnection, ProjectModelAssignment, WorkspaceModel
+from app.domain.solver import SolverModels
 
 
 class ModelProviderSqlRepository:
@@ -192,27 +192,13 @@ class ModelProviderSqlRepository:
                 ProjectModelAssignment.source_id == source_id
             )
         )
-        selections = {
-            role: model_id for role, model_id in result.all() if role not in SOLVER_MODEL_ROLES
+        return {
+            role: model_id
+            for role, model_id in result.all()
+            if role not in SolverModels.model_fields
         }
-        profile = await self._session.execute(
-            text(
-                "SELECT ticket_resolution, ticket_triage, ticket_resolution_cheap "
-                "FROM solver_profiles WHERE source_id = :source_id AND is_default"
-            ),
-            {"source_id": source_id},
-        )
-        row = profile.mappings().one_or_none()
-        if row is not None:
-            selections.update(
-                {role: int(model_id) for role, model_id in row.items() if model_id is not None}
-            )
-        return selections
 
     async def set_project_selection(self, source_id: int, role: str, model_id: int | None) -> None:
-        if role in SOLVER_MODEL_ROLES:
-            await SolverSqlRepository(self._session).set_default_model(source_id, role, model_id)
-            return
         item = await self._session.get(ProjectModelAssignment, (source_id, role))
         if model_id is None:
             if item is not None:

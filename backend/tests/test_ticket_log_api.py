@@ -163,7 +163,7 @@ async def test_ticket_run_is_blocked_while_log_attachment_is_queued(
         lambda session: (_ for _ in ()).throw(AssertionError("agent must not start")),
     )
 
-    response = await api_client.post(f"/api/v1/tickets/{ticket_id}/run")
+    response = await api_client.post(f"/api/v1/tickets/{ticket_id}/run", json={"profile_id": 1})
 
     assert response.status_code == 409
     assert "log archive" in response.json()["detail"].lower()
@@ -186,7 +186,7 @@ async def test_ticket_run_is_blocked_when_log_attachment_failed(
             {"source_id": int(row.scalar_one()), "ticket_id": ticket_id},
         )
 
-    response = await api_client.post(f"/api/v1/tickets/{ticket_id}/run")
+    response = await api_client.post(f"/api/v1/tickets/{ticket_id}/run", json={"profile_id": 1})
 
     assert response.status_code == 409
     assert "retry or remove" in response.json()["detail"].lower()

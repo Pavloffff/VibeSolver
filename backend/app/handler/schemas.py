@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from app.domain.entities import ConfigField
 from app.domain.solver import TicketRun
+from app.domain.tickets import LocalizedTicketResult
 
 
 class ConfigSchema(BaseModel):
@@ -209,6 +210,7 @@ class TicketCreateIn(BaseModel):
 
 class TicketCitationOut(BaseModel):
     source_ref: str
+    label: str | None = None
     path: str
     index_type: str
     start_line: int | None = None
@@ -258,6 +260,8 @@ class TicketOut(BaseModel):
     answer: str | None = None
     escalate_reason: str | None = None
     citations: list[TicketCitationOut] = Field(default_factory=list)
+    localized_result: LocalizedTicketResult | None = None
+    english_result: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -276,8 +280,13 @@ class TicketStepOut(BaseModel):
     status: str = "completed"
 
 
+class TicketArchivePreviewOut(BaseModel):
+    text: str
+
+
 class TicketRunIn(BaseModel):
-    profile_id: int | None = Field(default=None, gt=0)
+    profile_id: int = Field(gt=0, description="ID of the Solver profile selected for this run.")
+    comment: str | None = Field(default=None, max_length=4000)
 
 
 class TicketDetailOut(BaseModel):

@@ -5,8 +5,14 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.solver import SolverModelSnapshots, SolverProfile, TicketRun
-from app.domain.tickets import TICKET_STATUSES, Ticket, TicketStats, TicketStep
+from app.domain.solver import SolverModelSnapshots, SolverProfile, TicketRerunContext, TicketRun
+from app.domain.tickets import (
+    TICKET_STATUSES,
+    LocalizedTicketResult,
+    Ticket,
+    TicketStats,
+    TicketStep,
+)
 
 
 class TicketSqlRepository:
@@ -65,21 +71,27 @@ class TicketSqlRepository:
         return changed
 
     async def start_run(
-        self, ticket_id: int, expected: str, profile: SolverProfile, models: SolverModelSnapshots
+        self,
+        ticket: Ticket,
+        profile: SolverProfile,
+        models: SolverModelSnapshots,
+        rerun_context: TicketRerunContext | None,
     ) -> int | None:
         result = await self._session.execute(
             text(
                 "WITH started AS (UPDATE tickets SET status = 'running', updated_at = now() "
-                "WHERE id = :ticket_id AND status = :expected "
+                "WHERE id = :ticket_id AND status = :expected AND updated_at = :expected_updated_at "
                 "AND NOT EXISTS (SELECT 1 FROM ticket_log_attachments "
                 "WHERE ticket_id = :ticket_id AND status <> 'ready') RETURNING id) "
-                "INSERT INTO ticket_runs (ticket_id, profile_id, profile_name, enabled, models, status) "
+                "INSERT INTO ticket_runs (ticket_id, profile_id, profile_name, enabled, models, status, rerun_context) "
                 "SELECT id, :profile_id, :name, CAST(:enabled AS jsonb), CAST(:models AS jsonb), "
-                "'running' FROM started RETURNING id"
+                "'running', CAST(:rerun_context AS jsonb) FROM started RETURNING id"
             ),
             {
-                "ticket_id": ticket_id,
-                "expected": expected,
+                "ticket_id": ticket.id,
+                "expected": ticket.status,
+                "expected_updated_at": ticket.updated_at,
+                "rerun_context": rerun_context.model_dump_json() if rerun_context else None,
                 "profile_id": profile.id,
                 "name": profile.name,
                 "enabled": profile.enabled.model_dump_json(),
@@ -109,6 +121,8 @@ class TicketSqlRepository:
         escalate_reason: str | None = None,
         citations: list[dict[str, Any]] | None = None,
         run_id: int | None = None,
+        localized_result: LocalizedTicketResult | None = None,
+        english_result: str | None = None,
     ) -> Ticket | None:
         await self._session.execute(
             text(
@@ -116,7 +130,9 @@ class TicketSqlRepository:
                 "triage_json = CASE WHEN CAST(:run_id AS bigint) IS NULL "
                 "THEN COALESCE(CAST(:triage AS jsonb), triage_json) ELSE CAST(:triage AS jsonb) END, "
                 "answer = :answer, escalate_reason = :escalate_reason, "
-                "citations_json = CAST(:citations AS jsonb), updated_at = now() "
+                "citations_json = CAST(:citations AS jsonb), "
+                "localized_result = CAST(:localized_result AS jsonb), english_result = :english_result, "
+                "updated_at = now() "
                 "WHERE id = :ticket_id"
             ),
             {
@@ -126,6 +142,10 @@ class TicketSqlRepository:
                 "triage": json.dumps(triage, ensure_ascii=False) if triage is not None else None,
                 "answer": answer,
                 "escalate_reason": escalate_reason,
+                "english_result": english_result,
+                "localized_result": localized_result.model_dump_json()
+                if localized_result
+                else None,
                 "citations": json.dumps(citations, ensure_ascii=False)
                 if citations is not None
                 else None,
@@ -280,7 +300,7 @@ class TicketSqlRepository:
 _TICKET_COLUMNS = (
     "SELECT ticket.id, ticket.source_id, ticket.title, ticket.description, ticket.status, "
     "ticket.triage_json, ticket.answer, ticket.escalate_reason, ticket.citations_json, "
-    "ticket.created_at, ticket.updated_at, "
+    "ticket.created_at, ticket.updated_at, ticket.localized_result, ticket.english_result, "
     "EXISTS (SELECT 1 FROM ticket_log_attachments AS attachment "
     "WHERE attachment.source_id = ticket.source_id AND attachment.ticket_id = ticket.id "
     "AND attachment.status <> 'ready') AS has_unready_log_attachments "
@@ -302,6 +322,12 @@ def _to_ticket(row: Any) -> Ticket:
         created_at=row.created_at if isinstance(row.created_at, datetime) else None,
         updated_at=row.updated_at if isinstance(row.updated_at, datetime) else None,
         has_unready_log_attachments=bool(row.has_unready_log_attachments),
+        english_result=row.english_result,
+        localized_result=(
+            LocalizedTicketResult.model_validate(row.localized_result)
+            if row.localized_result is not None
+            else None
+        ),
     )
 
 

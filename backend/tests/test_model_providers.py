@@ -1,6 +1,7 @@
 import json
 from collections.abc import AsyncGenerator, Iterator
 from typing import Any
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from sqlalchemy import text
@@ -9,19 +10,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.adapter.repositories import ModelProviderSqlRepository, SourceSqlRepository
 from app.domain.model_provider_entities import (
     ModelProviderDefinition,
+    ProviderConnection,
     ProviderCredentials,
     ProviderModel,
 )
+from app.domain.solver import SolverModels
 from app.usecase.model_providers import PROJECT_MODEL_ROLES, ModelProviderUsecase
 
 SECRETS_KEY = "test-secrets-key"
 ZAI_URL = "https://api.z.ai/api/paas/v4"
 
 
-def test_ticket_model_roles_require_chat_capability() -> None:
-    assert PROJECT_MODEL_ROLES["ticket_triage"] == "chat"
-    assert PROJECT_MODEL_ROLES["ticket_resolution"] == "chat"
-    assert PROJECT_MODEL_ROLES["ticket_resolution_cheap"] == "chat"
+def test_project_model_roles_exclude_solver_assignments() -> None:
+    assert PROJECT_MODEL_ROLES.keys().isdisjoint(SolverModels.model_fields)
 
 
 @pytest.fixture
@@ -161,3 +162,29 @@ async def test_ollama_pull_streams_progress_and_finishes_installed(
     assert workspace[0].provider_model_id == "llama3"
     assert workspace[0].status == "installed"
     assert workspace[0].capabilities == ["chat"]
+
+
+async def test_connection_update_does_not_contact_provider_or_clear_key() -> None:
+    adapter = Mock()
+    adapter.list_models.side_effect = AssertionError("Updates must not contact the provider")
+    repository = Mock()
+    repository.get_credentials = AsyncMock(
+        return_value=ProviderCredentials(41, "zai", "Before", ZAI_URL, "old-secret")
+    )
+    repository.update_connection = AsyncMock(
+        return_value=ProviderConnection(41, "zai", "After", ZAI_URL, True)
+    )
+    usecase = ModelProviderUsecase(
+        repository,
+        Mock(),
+        {"zai": ModelProviderDefinition(adapter, ZAI_URL, "Z.ai", True, fixed_url=True)},
+        request_timeout=5,
+    )
+
+    updated = await usecase.update_connection(41, "  After  ", None, "")
+
+    assert updated.name == "After"
+    assert updated.has_api_key
+    repository.update_connection.assert_awaited_once_with(41, "After", ZAI_URL, None)
+    adapter.list_models.assert_not_called()
+    repository.upsert_models.assert_not_called()

@@ -4,11 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.adapter.config import get_settings
 from app.handler.routes import (
     connectors,
+    diagnostics,
     model_providers,
     search,
     solver,
     source_browser,
     sources,
+    ticket_localization,
     tickets,
     uploads,
 )
@@ -30,7 +32,9 @@ def create_app() -> FastAPI:
     app.include_router(model_providers.router, prefix="/api/v1")
     app.include_router(search.router, prefix="/api/v1")
     app.include_router(tickets.router, prefix="/api/v1")
+    app.include_router(ticket_localization.router, prefix="/api/v1")
     app.include_router(solver.router, prefix="/api/v1")
+    app.include_router(diagnostics.router, prefix="/api/v1")
 
     @app.get("/health")
     async def health() -> dict[str, str]:

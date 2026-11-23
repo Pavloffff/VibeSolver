@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
 TICKET_STATUSES: tuple[str, ...] = (
     "new",
     "running",
@@ -20,6 +22,19 @@ class TicketConflictError(RuntimeError):
     pass
 
 
+class LocalizedTicketResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    en: str = Field(min_length=1)
+    ru: str = Field(min_length=1)
+    zh: str = Field(min_length=1)
+
+
+class TicketResultTranslations(BaseModel):
+    localized_result: LocalizedTicketResult | None
+    english_result: str | None = None
+
+
 @dataclass(slots=True)
 class Ticket:
     id: int
@@ -34,6 +49,8 @@ class Ticket:
     created_at: datetime | None = None
     updated_at: datetime | None = None
     has_unready_log_attachments: bool = False
+    localized_result: LocalizedTicketResult | None = None
+    english_result: str | None = None
 
 
 @dataclass(slots=True)

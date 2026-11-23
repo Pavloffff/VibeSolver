@@ -1,12 +1,13 @@
 from typing import Annotated
 
 from botocore.exceptions import BotoCoreError
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapter.config import get_settings
 from app.adapter.db import get_session
+from app.adapter.diagnostic_tools import DiagnosticToolsAdapter
 from app.adapter.material_generation import MaterialGenerationAdapter
 from app.adapter.repositories import (
     ModelProviderSqlRepository,
@@ -24,6 +25,7 @@ from app.domain.ticket_logs import TicketLogAttachment
 from app.domain.tickets import Ticket, TicketConflictError, TicketNotFoundError, TicketStep
 from app.handler.routes.search import build_retrieval_usecase
 from app.handler.schemas import (
+    TicketArchivePreviewOut,
     TicketBriefOut,
     TicketCitationOut,
     TicketCreateIn,
@@ -40,6 +42,11 @@ from app.usecase.ticket_agent import (
     TicketAgentUnavailableError,
     TicketAgentUsecase,
 )
+from app.usecase.ticket_archive import (
+    MAX_TICKET_ARCHIVE_BYTES,
+    TicketArchiveError,
+    read_ticket_archive,
+)
 from app.usecase.ticket_log_uploads import TicketLogUploadError, validate_log_archive_upload
 
 router = APIRouter(tags=["tickets"])
@@ -54,6 +61,7 @@ def build_ticket_usecase(session: AsyncSession) -> TicketAgentUsecase:
         models=ModelProviderSqlRepository(session, settings.model_secrets_key),
         retrieval=build_retrieval_usecase(session),
         gateway=MaterialGenerationAdapter(),
+        diagnostic_tools=DiagnosticToolsAdapter(session, settings),
         config=TicketAgentConfig(
             timeout_seconds=settings.ticket_agent_timeout_seconds,
             max_output_tokens=settings.ticket_agent_max_output_tokens,
@@ -102,6 +110,36 @@ async def ticket_stats(source_id: int, session: SessionDep) -> TicketStatsOut:
         avg_cost_usd=stats.avg_cost_usd,
         avg_tokens_per_ticket=stats.avg_tokens_per_ticket,
     )
+
+
+@router.post(
+    "/tickets/archive-preview",
+    response_model=TicketArchivePreviewOut,
+    responses={
+        413: {"description": "ZIP archive exceeds the upload limit"},
+        415: {"description": "Unsupported content type"},
+        422: {"description": "ZIP archive must contain exactly one UTF-8 TXT file"},
+    },
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}},
+        }
+    },
+)
+async def preview_ticket_archive(request: Request) -> TicketArchivePreviewOut:
+    if request.headers.get("content-type", "").split(";", 1)[0].lower() != "application/zip":
+        raise HTTPException(status_code=415, detail="Upload a ZIP archive.")
+    limit = min(MAX_TICKET_ARCHIVE_BYTES, get_settings().max_upload_bytes)
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(content) + len(chunk) > limit:
+            raise HTTPException(status_code=413, detail="The ZIP archive is too large.")
+        content.extend(chunk)
+    try:
+        return TicketArchivePreviewOut(text=read_ticket_archive(content))
+    except TicketArchiveError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/tickets/{ticket_id}", response_model=TicketDetailOut)
@@ -241,9 +279,7 @@ async def delete_ticket_log_attachment(
 
 
 @router.post("/tickets/{ticket_id}/run", response_model=TicketDetailOut)
-async def run_ticket(
-    ticket_id: int, session: SessionDep, payload: TicketRunIn | None = None
-) -> TicketDetailOut:
+async def run_ticket(ticket_id: int, session: SessionDep, payload: TicketRunIn) -> TicketDetailOut:
     ticket = await TicketSqlRepository(session).get(ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
@@ -257,10 +293,8 @@ async def run_ticket(
         )
     usecase = build_ticket_usecase(session)
     try:
-        profile = await SolverSqlRepository(session).get(
-            ticket.source_id, payload.profile_id if payload is not None else None
-        )
-        ticket = await usecase.run(ticket_id, profile=profile)
+        profile = await SolverSqlRepository(session).get(ticket.source_id, payload.profile_id)
+        ticket = await usecase.run(ticket_id, profile=profile, comment=payload.comment)
     except TicketNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Ticket not found") from exc
     except (SolverProfileNotFoundError, SourceNotFoundError) as exc:
@@ -298,6 +332,8 @@ def _ticket_out(ticket: Ticket) -> TicketOut:
         status=ticket.status,
         triage=ticket.triage,
         answer=ticket.answer,
+        localized_result=ticket.localized_result,
+        english_result=ticket.english_result,
         escalate_reason=ticket.escalate_reason,
         citations=[TicketCitationOut.model_validate(item) for item in ticket.citations or []],
         created_at=_iso(ticket.created_at),

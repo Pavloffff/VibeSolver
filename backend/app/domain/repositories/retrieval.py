@@ -28,6 +28,11 @@ class SearchHit:
                 f"ticket:{self.ticket_id}:attachment:{self.attachment_id}:"
                 f"{self.path}:{self.start_line if self.start_line is not None else 0}"
             )
+        if self.ticket_id is not None:
+            return (
+                f"ticket:{self.ticket_id}:{self.index_type}:{self.branch}:"
+                f"{self.event_timestamp or ''}:{self.path}"
+            )
         return (
             f"run:{self.run_id}:{self.path}:{self.start_line if self.start_line is not None else 0}"
         )

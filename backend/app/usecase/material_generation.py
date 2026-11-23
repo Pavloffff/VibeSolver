@@ -45,11 +45,18 @@ class MaterialGenerationConfig:
     max_total_bytes: int
 
 
+_ENGLISH_GENERATED_PROSE = (
+    "Write generated prose in English, regardless of the source language. "
+    "Preserve source identifiers, paths, code, and literal quotes exactly. "
+)
+
+
 MATERIAL_GENERATOR_REGISTRY: dict[str, GeneratorDefinition] = {
     "documentation": GeneratorDefinition(
         ("code",),
         ".md",
-        """Write detailed, functional Russian project documentation from source code and existing documentation. """
+        _ENGLISH_GENERATED_PROSE
+        + "Write detailed, functional project documentation from source code and existing documentation. "
         "Describe what the product does, user-visible capabilities, concrete workflows, business "
         "rules, data changes, integrations, validation, failure behavior, and how relevant code "
         "components work together. Do not produce only a directory or module overview. Do not "
@@ -72,7 +79,8 @@ MATERIAL_GENERATOR_REGISTRY: dict[str, GeneratorDefinition] = {
     "user_flow": GeneratorDefinition(
         ("code", "documentation"),
         ".json",
-        """Identify user workflows from the supplied code and documentation. Do not invent screens or behavior. """
+        _ENGLISH_GENERATED_PROSE
+        + "Identify user workflows from the supplied code and documentation. Do not invent screens or behavior. "
         "The content field of each file must be a JSON array of scenario objects. Every object "
         "must contain a non-empty string title, a non-empty string actor, and a non-empty steps "
         "array. Every step must be an object with non-empty string action and expected_result. "
@@ -275,7 +283,8 @@ class MaterialGenerationUsecase:
             draft = _parse_generated_draft(raw, list(provided_context))
         except (TypeError, ValueError, ValidationError):
             repair_system = (
-                "Convert the supplied model response into valid JSON with this exact schema: "
+                _ENGLISH_GENERATED_PROSE
+                + "Convert the supplied model response into valid JSON with this exact schema: "
                 '{"files":[{"path":"relative/file.md","content":"text",'
                 '"source_refs":["S1"]}]}. Keep the same useful content, cite only supplied '
                 "source IDs, and return JSON only without Markdown fences."
@@ -348,7 +357,8 @@ class MaterialGenerationUsecase:
                         self._gateway.generate_json,
                         generation_credentials,
                         generation_model.provider_model_id,
-                        "Repair the supplied User Flow content and return a JSON array only. "
+                        _ENGLISH_GENERATED_PROSE
+                        + "Repair the supplied User Flow content and return a JSON array only. "
                         "Each scenario must have title, actor, steps. Each step must have "
                         "action and expected_result. Optional fields: components, failure_modes, "
                         "checklist, doc_refs, provenance, approved. Lists contain strings, "
@@ -426,8 +436,9 @@ class MaterialGenerationUsecase:
         model_id: str,
     ) -> str:
         system_prompt = (
-            "Analyze the supplied indexed code fragments and existing local documentation. "
-            "Write a concise but information-dense Russian functional synopsis: explain product "
+            _ENGLISH_GENERATED_PROSE
+            + "Analyze the supplied indexed code fragments and existing local documentation. "
+            "Write a concise but information-dense functional synopsis: explain product "
             "capabilities, concrete user actions and outcomes, business rules and state changes, "
             "data read or written, calls between components, integrations, validation and errors. "
             "Avoid a directory-only summary. Do not guess; mark gaps as unknown. Return JSON only "
@@ -452,7 +463,8 @@ class MaterialGenerationUsecase:
                 self._gateway.generate_json,
                 credentials,
                 model_id,
-                "Rewrite the supplied content as valid JSON with a Russian string field named "
+                _ENGLISH_GENERATED_PROSE
+                + "Rewrite the supplied content as valid JSON with a string field named "
                 '"summary" (at least 80 characters) and a string-array field "source_refs". '
                 "Preserve its facts, cite only the allowed IDs, and return JSON only.",
                 f"Allowed IDs: {', '.join(source_ids)}\n\nContent:\n{raw[: self._config.max_file_bytes]}",
@@ -561,7 +573,7 @@ class MaterialGenerationUsecase:
         model_id: int,
     ) -> str:
         if category == "documentation":
-            source_lines = ["", "## Источники"]
+            source_lines = ["", "## Sources"]
             source_lines.extend(f"- `{item.path}`{_line_suffix(item)}" for item in references)
             return content.rstrip() + "\n" + "\n".join(source_lines) + "\n"
         try:
@@ -636,8 +648,8 @@ def _line_suffix(chunk: RetrievedChunk) -> str:
     if chunk.start_line is None:
         return ""
     if chunk.end_line is None or chunk.end_line == chunk.start_line:
-        return f" · строка {chunk.start_line}"
-    return f" · строки {chunk.start_line}–{chunk.end_line}"
+        return f" · line {chunk.start_line}"
+    return f" · lines {chunk.start_line}–{chunk.end_line}"
 
 
 def _keyword_relevance(query: str, content: str) -> float:
@@ -752,12 +764,10 @@ def _normalize_user_flow_content(content: str) -> str:
                     "title": (
                         title.strip()
                         if isinstance(title, str) and title.strip()
-                        else "Сценарий пользователя"
+                        else "User workflow"
                     ),
                     "actor": (
-                        actor.strip()
-                        if isinstance(actor, str) and actor.strip()
-                        else "Пользователь"
+                        actor.strip() if isinstance(actor, str) and actor.strip() else "User"
                     ),
                     "steps": steps,
                     "components": _string_list(scenario.get("components", scenario.get("systems"))),

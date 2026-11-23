@@ -4,6 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.adapter.repositories.tickets import TicketSqlRepository
+from app.domain.tickets import LocalizedTicketResult
 
 
 async def _source_id(db_engine) -> int:
@@ -28,15 +29,23 @@ async def test_ticket_roundtrip_and_append_only_steps(db_engine, clean_database:
         assert ticket.status == "new"
         assert ticket.title == "Ошибка входа"
 
+        localized = LocalizedTicketResult(
+            en="Reset the password.",
+            ru="Сбросьте пароль.",
+            zh="重置密码。",
+        )
         updated = await repository.update_result(
             ticket.id,
             "answered",
             triage={"category": "auth", "severity": "high"},
-            answer="Сбросьте пароль",
+            answer=localized.en,
+            localized_result=localized,
             citations=[{"source_ref": "run:1:a.py:10", "path": "a.py"}],
         )
         assert updated is not None
         assert updated.status == "answered"
+        assert updated.answer == localized.en
+        assert updated.localized_result == localized
         assert updated.triage == {"category": "auth", "severity": "high"}
         assert updated.citations == [{"source_ref": "run:1:a.py:10", "path": "a.py"}]
 
@@ -83,7 +92,12 @@ async def test_ticket_roundtrip_and_append_only_steps(db_engine, clean_database:
 
         listed = await repository.list_for_source(source_id)
         assert [item.id for item in listed] == [ticket.id]
-        assert await repository.get(ticket.id) is not None
+        persisted = await repository.get(ticket.id)
+        assert persisted is not None and persisted.localized_result == localized
+        failed = await repository.update_result(
+            ticket.id, "failed", escalate_reason="Model unavailable"
+        )
+        assert failed is not None and failed.localized_result is None
 
 
 async def test_concurrent_run_claims_have_one_winner(db_engine, clean_database: None) -> None:

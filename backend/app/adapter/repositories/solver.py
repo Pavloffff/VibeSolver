@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,72 +14,62 @@ from app.domain.solver import (
     SolverProfileNotFoundError,
 )
 
-SOLVER_MODEL_ROLES = frozenset(SolverModels.model_fields)
-
 
 class SolverSqlRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def _prepare(self, source_id: int) -> None:
-        source = await self._session.execute(
-            text("SELECT id FROM sources WHERE id = :source_id FOR UPDATE"),
-            {"source_id": source_id},
-        )
-        if source.scalar_one_or_none() is None:
+    async def _require_project(self, source_id: int, *, lock: bool = False) -> None:
+        statement = "SELECT id FROM sources WHERE id = :source_id"
+        if lock:
+            statement += " FOR UPDATE"
+        result = await self._session.execute(text(statement), {"source_id": source_id})
+        if result.scalar_one_or_none() is None:
             raise SourceNotFoundError(f"Project not found: {source_id}")
-        await self._session.execute(
-            text(
-                "INSERT INTO solver_profiles (source_id, name, is_default) "
-                "SELECT :source_id, 'Default', TRUE WHERE NOT EXISTS "
-                "(SELECT 1 FROM solver_profiles WHERE source_id = :source_id)"
-            ),
-            {"source_id": source_id},
-        )
 
-    async def _rows(self, source_id: int) -> list[RowMapping]:
+    async def list(self, source_id: int) -> list[SolverProfile]:
+        await self._require_project(source_id)
         result = await self._session.execute(
-            text("SELECT * FROM solver_profiles WHERE source_id = :source_id ORDER BY id"),
+            text(
+                "SELECT * FROM solver_profiles WHERE source_id = :source_id "
+                "AND NOT is_archived_seed ORDER BY id"
+            ),
             {"source_id": source_id},
         )
-        return list(result.mappings().all())
+        return [_profile(row) for row in result.mappings()]
 
-    async def list(self, source_id: int) -> tuple[list[SolverProfile], int]:
-        await self._prepare(source_id)
-        rows = await self._rows(source_id)
-        await self._session.commit()
-        return [_profile(row) for row in rows], int(
-            next(row["id"] for row in rows if row["is_default"])
-        )
-
-    async def get(self, source_id: int, profile_id: int | None) -> SolverProfile:
-        await self._prepare(source_id)
-        for row in await self._rows(source_id):
-            matches = row["is_default"] if profile_id is None else row["id"] == profile_id
-            if matches:
-                return _profile(row)
-        raise SolverProfileNotFoundError("Solver profile not found in this project")
-
-    async def set_default_model(self, source_id: int, role: str, model_id: int | None) -> None:
-        if role not in SOLVER_MODEL_ROLES:
-            raise SolverProfileConflictError("Unknown Solver model role")
-        await self._prepare(source_id)
-        await self._session.execute(
+    async def get(self, source_id: int, profile_id: int) -> SolverProfile:
+        result = await self._session.execute(
             text(
-                f"UPDATE solver_profiles SET {role} = :model_id WHERE source_id = :source_id AND is_default"
+                "SELECT * FROM solver_profiles WHERE source_id = :source_id AND id = :profile_id "
+                "AND NOT is_archived_seed"
             ),
-            {"source_id": source_id, "model_id": model_id},
+            {"source_id": source_id, "profile_id": profile_id},
         )
-        await self._session.commit()
+        row = result.mappings().one_or_none()
+        if row is None:
+            raise SolverProfileNotFoundError("Solver profile not found in this project")
+        return _profile(row)
 
     async def save(
         self, source_id: int, profile_id: int | None, profile: SolverProfileInput
     ) -> SolverProfile:
-        await self._prepare(source_id)
-        rows = await self._rows(source_id)
+        await self._require_project(source_id, lock=True)
         if profile_id is not None:
-            _find_profile(rows, profile_id)
-        if any(row["name"] == profile.name and row["id"] != profile_id for row in rows):
+            await self.get(source_id, profile_id)
+        existing = await self._session.execute(
+            text(
+                "SELECT id, is_archived_seed FROM solver_profiles "
+                "WHERE source_id = :source_id AND name = :name"
+            ),
+            {"source_id": source_id, "name": profile.name},
+        )
+        same_name = existing.mappings().one_or_none()
+        if (
+            same_name is not None
+            and same_name["id"] != profile_id
+            and not same_name["is_archived_seed"]
+        ):
             raise SolverProfileConflictError("A Solver profile with this name already exists")
         assignments = profile.models.model_dump()
         for model_id in set(assignments.values()) - {None}:
@@ -94,16 +86,28 @@ class SolverSqlRepository:
         if profile_id is None:
             statement = (
                 "INSERT INTO solver_profiles (source_id, name, triage_enabled, resolve_enabled, "
-                "ticket_resolution, ticket_triage, ticket_resolution_cheap) VALUES "
+                "ticket_resolution, ticket_triage, ticket_resolution_cheap, specialist_flags) VALUES "
                 "(:source_id, :name, :triage, :resolve, :ticket_resolution, :ticket_triage, "
-                ":ticket_resolution_cheap) RETURNING *"
+                ":ticket_resolution_cheap, CAST(:flags AS jsonb)) "
+                "ON CONFLICT (source_id, name) DO UPDATE SET is_archived_seed = FALSE, "
+                "triage_enabled = EXCLUDED.triage_enabled, resolve_enabled = EXCLUDED.resolve_enabled, "
+                "ticket_resolution = EXCLUDED.ticket_resolution, ticket_triage = EXCLUDED.ticket_triage, "
+                "ticket_resolution_cheap = EXCLUDED.ticket_resolution_cheap, "
+                "specialist_flags = EXCLUDED.specialist_flags "
+                "WHERE solver_profiles.is_archived_seed RETURNING *"
             )
         else:
             statement = (
                 "UPDATE solver_profiles SET name = :name, triage_enabled = :triage, "
                 "resolve_enabled = :resolve, ticket_resolution = :ticket_resolution, "
-                "ticket_triage = :ticket_triage, ticket_resolution_cheap = :ticket_resolution_cheap "
+                "ticket_triage = :ticket_triage, ticket_resolution_cheap = :ticket_resolution_cheap, "
+                "specialist_flags = CAST(:flags AS jsonb) "
                 "WHERE source_id = :source_id AND id = :profile_id RETURNING *"
+            )
+        if profile_id is not None and same_name is not None and same_name["is_archived_seed"]:
+            await self._session.execute(
+                text("DELETE FROM solver_profiles WHERE id = :profile_id AND is_archived_seed"),
+                {"profile_id": same_name["id"]},
             )
         result = await self._session.execute(
             text(statement),
@@ -111,7 +115,9 @@ class SolverSqlRepository:
                 "source_id": source_id,
                 "profile_id": profile_id,
                 "name": profile.name,
-                **profile.enabled.model_dump(),
+                "triage": profile.enabled.triage,
+                "resolve": profile.enabled.resolve,
+                "flags": json.dumps(profile.enabled.model_dump(exclude={"triage", "resolve"})),
                 **assignments,
             },
         )
@@ -119,55 +125,27 @@ class SolverSqlRepository:
         await self._session.commit()
         return saved
 
-    async def set_default(self, source_id: int, profile_id: int) -> None:
-        await self._prepare(source_id)
-        _find_profile(await self._rows(source_id), profile_id)
-        await self._set_default(source_id, profile_id)
-        await self._session.commit()
-
-    async def _set_default(self, source_id: int, profile_id: int) -> None:
-        await self._session.execute(
+    async def delete(self, source_id: int, profile_id: int) -> None:
+        await self._require_project(source_id, lock=True)
+        result = await self._session.execute(
             text(
-                "UPDATE solver_profiles SET is_default = FALSE WHERE source_id = :source_id AND is_default"
-            ),
-            {"source_id": source_id},
-        )
-        await self._session.execute(
-            text(
-                "UPDATE solver_profiles SET is_default = TRUE WHERE source_id = :source_id AND id = :profile_id"
+                "DELETE FROM solver_profiles WHERE source_id = :source_id AND id = :profile_id "
+                "AND NOT is_archived_seed RETURNING id"
             ),
             {"source_id": source_id, "profile_id": profile_id},
         )
-
-    async def delete(self, source_id: int, profile_id: int, replacement_id: int | None) -> None:
-        await self._prepare(source_id)
-        rows = await self._rows(source_id)
-        if _find_profile(rows, profile_id)["is_default"]:
-            if replacement_id is None or replacement_id == profile_id:
-                raise SolverProfileConflictError(
-                    "Select another profile as the default before deleting"
-                )
-            _find_profile(rows, replacement_id)
-            await self._set_default(source_id, replacement_id)
-        await self._session.execute(
-            text("DELETE FROM solver_profiles WHERE source_id = :source_id AND id = :profile_id"),
-            {"source_id": source_id, "profile_id": profile_id},
-        )
+        if result.scalar_one_or_none() is None:
+            raise SolverProfileNotFoundError("Solver profile not found in this project")
         await self._session.commit()
-
-
-def _find_profile(rows: list[RowMapping], profile_id: int) -> RowMapping:
-    for row in rows:
-        if row["id"] == profile_id:
-            return row
-    raise SolverProfileNotFoundError("Solver profile not found in this project")
 
 
 def _profile(row: RowMapping) -> SolverProfile:
     return SolverProfile(
         id=row["id"],
         name=row["name"],
-        enabled=SolverEnabled(triage=row["triage_enabled"], resolve=row["resolve_enabled"]),
+        enabled=SolverEnabled(
+            triage=row["triage_enabled"], resolve=row["resolve_enabled"], **row["specialist_flags"]
+        ),
         models=SolverModels(
             ticket_resolution=row["ticket_resolution"],
             ticket_triage=row["ticket_triage"],

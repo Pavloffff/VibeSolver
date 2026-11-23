@@ -2,7 +2,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +15,7 @@ from app.domain.solver import (
     SolverProfileInput,
     SolverProfileNotFoundError,
 )
-from app.usecase.ticket_agent import SOLVER_OPTIONAL_STAGES, SOLVER_STAGE_IDS, solver_public_edges
+from app.usecase.ticket_agent import solver_optional_stages, solver_public_edges, solver_stage_ids
 
 router = APIRouter(prefix="/sources", tags=["solver"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -35,7 +35,7 @@ class SolverGraphOut(BaseModel):
     nodes: list[SolverNodeOut]
     edges: list[SolverEdgeOut]
     profiles: list[SolverProfile]
-    default_profile_id: int
+    default_profile_id: None = None
 
 
 @contextmanager
@@ -51,15 +51,15 @@ def profile_errors() -> Iterator[None]:
 @router.get("/{source_id}/solver-graph", response_model=SolverGraphOut)
 async def get_solver_graph(source_id: int, session: SessionDep) -> SolverGraphOut:
     with profile_errors():
-        profiles, default_id = await SolverSqlRepository(session).list(source_id)
+        profiles = await SolverSqlRepository(session).list(source_id)
+        optional_stages = solver_optional_stages()
         return SolverGraphOut(
             nodes=[
-                SolverNodeOut(id=node, optional=node in SOLVER_OPTIONAL_STAGES)
-                for node in SOLVER_STAGE_IDS
+                SolverNodeOut(id=node, optional=node in optional_stages)
+                for node in solver_stage_ids()
             ],
             edges=[SolverEdgeOut(source=start, target=end) for start, end in solver_public_edges()],
             profiles=profiles,
-            default_profile_id=default_id,
         )
 
 
@@ -79,13 +79,16 @@ async def update_solver_profile(
         return await SolverSqlRepository(session).save(source_id, profile_id, payload)
 
 
-@router.put("/{source_id}/solver-profiles/{profile_id}/default", status_code=204)
-async def set_default_solver_profile(
-    source_id: int, profile_id: int, session: SessionDep
-) -> Response:
-    with profile_errors():
-        await SolverSqlRepository(session).set_default(source_id, profile_id)
-    return Response(status_code=204)
+@router.put(
+    "/{source_id}/solver-profiles/{profile_id}/default",
+    status_code=410,
+    deprecated=True,
+)
+async def set_default_solver_profile(source_id: int, profile_id: int) -> None:
+    raise HTTPException(
+        status_code=410,
+        detail="Choose a Solver profile for each run. Projects have no default profile.",
+    )
 
 
 @router.delete("/{source_id}/solver-profiles/{profile_id}", status_code=204)
@@ -93,8 +96,7 @@ async def delete_solver_profile(
     source_id: int,
     profile_id: int,
     session: SessionDep,
-    replacement_id: Annotated[int | None, Query(gt=0)] = None,
 ) -> Response:
     with profile_errors():
-        await SolverSqlRepository(session).delete(source_id, profile_id, replacement_id)
+        await SolverSqlRepository(session).delete(source_id, profile_id)
     return Response(status_code=204)

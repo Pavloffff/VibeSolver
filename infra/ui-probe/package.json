@@ -1,0 +1,9 @@
+{
+  "name": "vibesolver-ui-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "scripts": { "start": "node server.mjs", "test": "node --test" },
+  "dependencies": { "playwright-core": "1.65.1" }
+}

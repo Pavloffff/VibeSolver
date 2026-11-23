@@ -1,11 +1,17 @@
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
+from app.domain.diagnostic_tools import DiagnosticEvidence, DiagnosticTools
 from app.domain.entities import SourceNotFoundError
-from app.domain.model_provider_entities import ProviderCredentials, WorkspaceModelEntry
+from app.domain.model_provider_entities import (
+    ProviderCredentials,
+    ProviderUnavailableError,
+    WorkspaceModelEntry,
+)
 from app.domain.repositories.material_generation import GeneratedJson
 from app.domain.repositories.retrieval import (
     SearchHit,
@@ -14,6 +20,11 @@ from app.domain.repositories.retrieval import (
     SearchUnavailableError,
 )
 from app.domain.solver import SolverEnabled, SolverModels, SolverModelSnapshots, SolverProfile
+from app.domain.specialist_roles import (
+    SPECIALIST_REGISTRY,
+    SpecialistDefinition,
+    register_specialist,
+)
 from app.domain.tickets import Ticket, TicketConflictError
 from app.usecase.ticket_agent import (
     RESOLVER_SYSTEM,
@@ -28,7 +39,10 @@ from app.usecase.ticket_agent import (
     _format_dossier,
     _interleave_deduped,
     resolver_target,
+    solver_optional_stages,
+    solver_stage_ids,
 )
+from app.usecase.ticket_result_localization import LOCALIZATION_SYSTEM
 
 CONFIG = TicketAgentConfig(
     timeout_seconds=5,
@@ -42,9 +56,9 @@ TRIAGE_JSON = json.dumps(
         "category": "auth",
         "severity": "high",
         "complexity": "standard",
-        "summary": "Пользователь не может войти в админку",
+        "summary": "The user cannot sign in to the admin portal",
         "search_queries": ["вход в админку", "login admin handler"],
-        "missing_info": ["версия браузера"],
+        "missing_info": ["Browser version"],
     },
     ensure_ascii=False,
 )
@@ -52,7 +66,7 @@ TRIAGE_JSON = json.dumps(
 ANSWER_JSON = json.dumps(
     {
         "decision": "answer",
-        "answer": "Сбросьте пароль через форму восстановления.",
+        "answer": "Reset your password using the recovery form.",
         "escalate_reason": None,
         "source_refs": ["S1", "S9", "S1"],
     },
@@ -63,7 +77,7 @@ ESCALATE_JSON = json.dumps(
     {
         "decision": "escalate",
         "answer": None,
-        "escalate_reason": "В индексах нет данных о этой версии.",
+        "escalate_reason": "The indexes contain no information about this version.",
         "source_refs": [],
     },
     ensure_ascii=False,
@@ -100,9 +114,13 @@ class FakeTickets:
         return True
 
     async def start_run(
-        self, ticket_id: int, expected: str, profile: SolverProfile, models: SolverModelSnapshots
+        self,
+        ticket: Ticket,
+        profile: SolverProfile,
+        models: SolverModelSnapshots,
+        rerun_context: Any,
     ) -> int | None:
-        if await self.transition_status(ticket_id, expected, "running"):
+        if await self.transition_status(ticket.id, ticket.status, "running"):
             self.run_models = models
             return 1
         return None
@@ -114,6 +132,8 @@ class FakeTickets:
         ticket.answer = kwargs.get("answer")
         ticket.escalate_reason = kwargs.get("escalate_reason")
         ticket.citations = kwargs.get("citations")
+        ticket.localized_result = kwargs.get("localized_result")
+        ticket.english_result = kwargs.get("english_result")
         return ticket
 
     async def add_step(
@@ -245,6 +265,10 @@ class FakeGateway:
     def __init__(self, responses: list[str]) -> None:
         self.responses = list(responses)
         self.calls: list[str] = []
+        self.prompts: list[str] = []
+        self.system_prompts: list[str] = []
+        self.translation_requests: list[dict[str, Any]] = []
+        self.translation_failure: str | None = None
         self.model_ids: list[str] = []
         self.usages: list[tuple[int | None, int | None]] = []
 
@@ -258,11 +282,39 @@ class FakeGateway:
         max_output_tokens: int,
     ) -> str:
         self.calls.append(system_prompt[:24])
+        self.prompts.append(user_prompt)
+        self.system_prompts.append(system_prompt)
         if not self.responses:
             raise AssertionError("unexpected extra LLM call")
         return self.responses.pop(0)
 
     def generate_json_with_usage(self, *args: Any, **kwargs: Any) -> GeneratedJson:
+        if args[2] == LOCALIZATION_SYSTEM:
+            request = json.loads(args[3])
+            self.translation_requests.append(request)
+            if self.translation_failure == "provider":
+                raise ProviderUnavailableError("translation service unavailable")
+            canonical = request["text"]
+            translations = {
+                "Reset your password using the recovery form.": (
+                    "Сбросьте пароль через форму восстановления.",
+                    "请通过恢复表单重置密码。",
+                ),
+                "The indexes contain no information about this version.": (
+                    "В индексах нет сведений об этой версии.",
+                    "项目索引中没有此版本的信息。",
+                ),
+            }
+            ru, zh = translations.get(canonical, (f"Результат: {canonical}", f"结果：{canonical}"))
+            return GeneratedJson(
+                text=(
+                    "invalid"
+                    if self.translation_failure == "invalid"
+                    else json.dumps({"original_language": "en", "en": None, "ru": ru, "zh": zh})
+                ),
+                input_tokens=23,
+                output_tokens=49,
+            )
         result = self.generate_json(*args, **kwargs)
         self.model_ids.append(str(args[1]))
         input_tokens, output_tokens = self.usages.pop(0) if self.usages else (None, None)
@@ -292,6 +344,8 @@ def _usecase(
     retrieval: FakeRetrieval | None = None,
     models: FakeModels | None = None,
     sources_exists: bool = True,
+    diagnostic_tools: DiagnosticTools | None = None,
+    config: TicketAgentConfig = CONFIG,
 ) -> TicketAgentUsecase:
     return TicketAgentUsecase(
         tickets=tickets,
@@ -299,7 +353,8 @@ def _usecase(
         models=models or FakeModels(),
         retrieval=retrieval or FakeRetrieval(),
         gateway=gateway,
-        config=CONFIG,
+        config=config,
+        diagnostic_tools=diagnostic_tools,
     )
 
 
@@ -335,6 +390,376 @@ def test_ticket_agent_uses_compiled_langgraph_with_explicit_routes() -> None:
     assert {"escalate_empty", "escalate_invalid_refs", "escalate_model"}.issubset(graph.nodes)
 
 
+def test_triage_accepts_typed_specialist_recommendations() -> None:
+    triage = TriageResult.model_validate(
+        {**json.loads(TRIAGE_JSON), "specialists": ["code", "logs"]}
+    )
+    assert triage.specialists == ["code", "logs"]
+    assert TriageResult.model_validate_json(TRIAGE_JSON).specialists == []
+
+
+async def test_registered_specialist_can_be_enabled_and_routed_without_graph_changes() -> None:
+    role = "configuration"
+    with pytest.raises(ValidationError, match="Unknown Solver role"):
+        SolverEnabled.model_validate({role: True})
+    register_specialist(
+        role, SpecialistDefinition(frozenset({"configuration"}), "Check configuration.")
+    )
+    try:
+        with pytest.raises(ValidationError):
+            SolverEnabled.model_validate({role: "true"})
+        enabled = SolverEnabled.model_validate({role: True})
+        assert SolverEnabled.model_validate_json(enabled.model_dump_json()).specialist_enabled(role)
+        assert role in solver_stage_ids() and role in solver_optional_stages()
+        tickets = FakeTickets()
+        triage = json.dumps({**json.loads(TRIAGE_JSON), "specialists": [role]})
+        finding = json.dumps(
+            {"status": "supported", "finding": "Configuration is documented", "source_refs": ["S1"]}
+        )
+        gateway = FakeGateway([triage, finding, ANSWER_JSON])
+        usecase = _usecase(
+            tickets,
+            gateway,
+            retrieval=FakeRetrieval(hits=[replace(_hit(1), index_type="configuration")]),
+        )
+        ticket = await usecase.create_ticket(1, "Ошибка", "Параметры конфигурации")
+        profile = SolverProfile(
+            id=1, name="Специалист", enabled=enabled, models=SolverModels(ticket_resolution=1)
+        )
+        result = await usecase.run(ticket.id, profile)
+        assert result.status == "answered"
+        assert role in [step["step"] for step in tickets.steps]
+    finally:
+        SPECIALIST_REGISTRY.pop(role)
+
+
+async def test_documentation_ticket_uses_short_route_even_in_augmented_profile() -> None:
+    tickets = FakeTickets()
+    triage = json.dumps(
+        {**json.loads(TRIAGE_JSON), "complexity": "simple", "specialists": ["code"]}
+    )
+    gateway = FakeGateway([triage, ANSWER_JSON])
+    retrieval = FakeRetrieval(hits=[replace(_hit(1), index_type="documentation")])
+    usecase = _usecase(tickets, gateway, retrieval=retrieval)
+    ticket = await usecase.create_ticket(1, "Инструкция", "Как восстановить пароль?")
+    profile = SolverProfile(
+        id=1,
+        name="Расширенный",
+        enabled=SolverEnabled(code=True, review=True),
+        models=SolverModels(ticket_resolution=1, ticket_resolution_cheap=2),
+    )
+
+    result = await usecase.run(ticket.id, profile)
+
+    assert result.status == "answered"
+    assert [step["step"] for step in tickets.steps] == [
+        "triage",
+        "investigate",
+        "resolve",
+        "answer",
+    ]
+    assert gateway.model_ids == ["model-1", "model-2"]
+
+
+async def test_disputed_code_finding_runs_one_followup_and_independent_review() -> None:
+    class FollowupRetrieval(FakeRetrieval):
+        async def search(
+            self, source_id: int, query: str, index_types: Any, top_k: int
+        ) -> SearchResponse:
+            response = await super().search(source_id, query, index_types, top_k)
+            if query == "admin guard implementation":
+                assert index_types == ["code"]
+                return SearchResponse(hits=[_hit(7)], meta=response.meta)
+            return response
+
+    tickets = FakeTickets()
+    triage = json.dumps({**json.loads(TRIAGE_JSON), "specialists": ["code"]})
+    suggest = json.dumps(
+        {
+            "status": "gap",
+            "finding": "Need guard implementation",
+            "follow_up_query": "admin guard implementation",
+        }
+    )
+    finding = json.dumps(
+        {
+            "status": "disputed",
+            "finding": "Could be caused by the guard",
+            "source_refs": ["S2", "S999"],
+            "follow_up_query": "ignored",
+        }
+    )
+    review = json.dumps(
+        {"approved": False, "reason": "Evidence does not confirm the cause", "source_refs": ["S1"]}
+    )
+    gateway = FakeGateway([triage, suggest, finding, ANSWER_JSON, review])
+    retrieval = FollowupRetrieval(hits=[replace(_hit(1), content="initial code evidence " * 1000)])
+    usecase = _usecase(tickets, gateway, retrieval=retrieval)
+    ticket = await usecase.create_ticket(1, "Ошибка авторизации", "У администратора возникает 401")
+    profile = SolverProfile(
+        id=1,
+        name="Диагностика",
+        enabled=SolverEnabled(code=True, review=True),
+        models=SolverModels(ticket_resolution=1, ticket_resolution_cheap=2, ticket_triage=3),
+    )
+
+    result = await usecase.run(ticket.id, profile)
+
+    assert result.status == "escalated"
+    assert gateway.model_ids == ["model-3", "model-2", "model-2", "model-1", "model-3"]
+    assert retrieval.calls.count("admin guard implementation") == 1
+    assert "ignored" not in retrieval.calls
+    assert [step["step"] for step in tickets.steps] == [
+        "triage",
+        "investigate",
+        "code",
+        "resolve",
+        "review",
+        "escalate",
+    ]
+    assert tickets.steps[2]["output"]["source_refs"] == ["S2"]
+    assert tickets.steps[2]["input"]["refs"][0] == "S2"
+    assert tickets.steps[2]["output"]["targeted_search"] == "completed"
+    assert tickets.steps[-1]["output"]["evidence"]["S2"]["path"] == "app/module_7.py"
+
+
+async def test_targeted_search_unavailable_is_distinguished_in_specialist_trace() -> None:
+    class UnavailableSearch(FakeRetrieval):
+        async def search(
+            self, source_id: int, query: str, index_types: Any, top_k: int
+        ) -> SearchResponse:
+            if index_types == ["code"]:
+                raise SearchUnavailableError("private backend details")
+            return await super().search(source_id, query, index_types, top_k)
+
+    tickets = FakeTickets()
+    triage = json.dumps({**json.loads(TRIAGE_JSON), "specialists": ["code"]})
+    gap = json.dumps(
+        {"status": "gap", "finding": "Need the implementation", "follow_up_query": "admin guard"}
+    )
+    usecase = _usecase(
+        tickets, FakeGateway([triage, gap, ANSWER_JSON]), retrieval=UnavailableSearch()
+    )
+    ticket = await usecase.create_ticket(1, "Ошибка", "Проблема доступа")
+    profile = SolverProfile(
+        id=1,
+        name="Диагностика",
+        enabled=SolverEnabled(code=True),
+        models=SolverModels(ticket_resolution=1),
+    )
+
+    result = await usecase.run(ticket.id, profile)
+
+    assert result.status == "answered"
+    code_step = next(step for step in tickets.steps if step["step"] == "code")
+    assert code_step["output"]["targeted_search"] == "unavailable"
+    assert "private backend details" not in str(code_step)
+
+
+class FakeDiagnosticTools:
+    def __init__(self, ui: DiagnosticEvidence, web: DiagnosticEvidence) -> None:
+        self.ui = ui
+        self.web = web
+        self.calls: list[tuple[str, int, int]] = []
+
+    async def observe_ui(self, source_id: int, ticket_id: int) -> DiagnosticEvidence:
+        self.calls.append(("ui", source_id, ticket_id))
+        return self.ui
+
+    async def search_web(self, source_id: int, ticket_id: int) -> DiagnosticEvidence:
+        self.calls.append(("web", source_id, ticket_id))
+        return self.web
+
+
+@pytest.mark.parametrize(
+    "observed, baseline, title",
+    [
+        (True, False, None),
+        (False, True, None),
+        (True, True, None),
+        (True, False, "Не отображается галка"),
+        (True, False, "复选框是否勾选？"),
+    ],
+)
+async def test_ui_diagnostics_requires_observation_for_current_visibility(
+    observed: bool, baseline: bool, title: str | None
+) -> None:
+    class UnavailableRetrieval(FakeRetrieval):
+        async def search_ticket_context(
+            self, source_id: int, ticket_id: int, query: str, top_k: int
+        ) -> SearchResponse:
+            raise ProviderUnavailableError("unavailable test input")
+
+    ui_hit = replace(
+        _hit(8),
+        index_type="ui_observation",
+        path="engineer-observation",
+        branch="engineer",
+        event_timestamp="2026-11-23T00:00:00Z",
+        content=json.dumps(
+            {
+                "role": "button",
+                "name": "Save",
+                "width": 64,
+                "height": 24,
+                "visible": True,
+                "enabled": True,
+                "checked": None,
+                "origin": "engineer",
+                "observed_at": "2026-11-23T00:00:00Z",
+            }
+        ),
+    )
+    tools = FakeDiagnosticTools(
+        DiagnosticEvidence("completed", [ui_hit], "Engineer observation")
+        if observed
+        else DiagnosticEvidence("skipped", [], "No observation"),
+        DiagnosticEvidence("skipped", [], "Not enabled"),
+    )
+    tickets = FakeTickets()
+    triage = json.dumps({**json.loads(TRIAGE_JSON), "specialists": ["ui"]})
+    observation_ref = "S2" if baseline else "S1"
+    answer = json.dumps({**json.loads(ANSWER_JSON), "source_refs": [observation_ref]})
+    responses = [triage] if title is None else []
+    if observed:
+        responses.append(answer)
+    gateway = FakeGateway(responses)
+    usecase = _usecase(
+        tickets,
+        gateway,
+        retrieval=UnavailableRetrieval()
+        if title is not None
+        else FakeRetrieval(
+            hits=[replace(_hit(1), content="very long baseline " * 100)] if baseline else []
+        ),
+        diagnostic_tools=tools,
+        config=replace(CONFIG, max_context_characters=420),
+    )
+    ticket = await usecase.create_ticket(9, title or "Наблюдение", "В чём причина несоответствия?")
+    profile = SolverProfile(
+        id=1,
+        name="Диагностика",
+        enabled=SolverEnabled(triage=title is None, ui=True),
+        models=SolverModels(ticket_resolution=1),
+    )
+
+    result = await usecase.run(ticket.id, profile)
+
+    assert tools.calls == [("ui", 9, ticket.id)]
+    investigation = next(step for step in tickets.steps if step["step"] == "investigate")
+    assert investigation["output"]["search_status"] == (
+        "unavailable" if title is not None else "completed" if baseline else "empty"
+    )
+    if observed:
+        assert result.status == "answered"
+        assert result.citations and result.citations[0]["index_type"] == "ui_observation"
+        observed_data = next(step for step in tickets.steps if step["step"] == "ui")["output"][
+            "observations"
+        ][observation_ref]
+        assert (
+            next(step for step in tickets.steps if step["step"] == "resolve")["input"]["fragments"][
+                0
+            ]
+            == observation_ref
+        )
+        assert observed_data["width"] == 64
+        assert observed_data["origin"] == "engineer"
+        assert observed_data["observed_at"] == "2026-11-23T00:00:00Z"
+    else:
+        assert result.status == "escalated"
+        assert result.citations and result.citations[0]["index_type"] == "code"
+        assert (
+            tickets.steps[-1]["output"]["reason"]
+            == "The current state of the interface could not be confirmed by an observation."
+        )
+
+
+async def test_external_web_evidence_cannot_by_itself_confirm_answer() -> None:
+    web_hit = replace(
+        _hit(9),
+        index_type="external_web",
+        path="https://example.com/errors",
+        branch="searxng",
+        content=json.dumps({"title": "Help", "snippet": "This snippet should not be persisted"}),
+    )
+    tools = FakeDiagnosticTools(
+        DiagnosticEvidence("skipped", [], "Not enabled"),
+        DiagnosticEvidence("completed", [web_hit], "External source"),
+    )
+    tickets = FakeTickets()
+    gateway = FakeGateway([TRIAGE_JSON])
+    usecase = _usecase(tickets, gateway, retrieval=FakeRetrieval(hits=[]), diagnostic_tools=tools)
+    ticket = await usecase.create_ticket(4, "Ошибка", "Приложение остановилось")
+    profile = SolverProfile(
+        id=1,
+        name="Внешние сведения",
+        enabled=SolverEnabled(web=True),
+        models=SolverModels(ticket_resolution=1),
+    )
+
+    result = await usecase.run(ticket.id, profile)
+
+    assert tools.calls == [("web", 4, ticket.id)]
+    assert result.status == "escalated"
+    assert result.citations and result.citations[0]["index_type"] == "external_web"
+    assert gateway.model_ids == ["model-1"]
+    observed_data = next(step for step in tickets.steps if step["step"] == "web")["output"][
+        "observations"
+    ]["S1"]
+    assert observed_data["url"] == "https://example.com/errors"
+    assert observed_data["title"] == "Help"
+    assert "snippet" not in observed_data
+
+
+async def test_explicit_measurement_can_run_ui_with_simple_triage_and_docs() -> None:
+    tools = FakeDiagnosticTools(
+        DiagnosticEvidence("skipped", [], "No observation"),
+        DiagnosticEvidence("skipped", [], "Not enabled"),
+    )
+    tickets = FakeTickets()
+    triage = json.dumps({**json.loads(TRIAGE_JSON), "complexity": "simple"})
+    gateway = FakeGateway([triage])
+    usecase = _usecase(
+        tickets,
+        gateway,
+        retrieval=FakeRetrieval(hits=[replace(_hit(1), index_type="documentation")]),
+        diagnostic_tools=tools,
+    )
+    ticket = await usecase.create_ticket(4, "Ширина кнопки", "Сколько пикселей на экране?")
+    profile = SolverProfile(
+        id=1,
+        name="Измерение",
+        enabled=SolverEnabled(ui=True),
+        models=SolverModels(ticket_resolution=1),
+    )
+    result = await usecase.run(ticket.id, profile)
+
+    assert tools.calls == [("ui", 4, ticket.id)]
+    assert result.status == "escalated"
+
+
+async def test_answer_and_trace_keep_only_links_grounded_in_visible_citations() -> None:
+    tickets = FakeTickets()
+    valid = "https://example.com/guide"
+    invented = "https://github.com/example/repo/blob/lab5/docs/user_talks.md"
+    answer = json.dumps(
+        {
+            **json.loads(ANSWER_JSON),
+            "answer": f"[Руководство]({valid}) и [lab5/docs/user_talks.md]({invented}). Вызовите `/api/v1/tickets`.",
+        }
+    )
+    retrieval = FakeRetrieval(hits=[replace(_hit(1), content=f"Guide: {valid}")])
+    usecase = _usecase(tickets, FakeGateway([TRIAGE_JSON, answer]), retrieval=retrieval)
+    ticket = await usecase.create_ticket(1, "Ссылка на руководство", "Где посмотреть документацию?")
+
+    result = await usecase.run(ticket.id)
+
+    assert result.answer and f"[Руководство]({valid})" in result.answer
+    assert invented not in result.answer and "lab5/docs/user_talks.md" not in result.answer
+    assert "`/api/v1/tickets`" in result.answer
+    assert tickets.steps[-1]["output"]["answer"] == result.answer
+
+
 async def test_run_answers_with_valid_citations() -> None:
     tickets = FakeTickets()
     gateway = FakeGateway([TRIAGE_JSON, ANSWER_JSON])
@@ -344,9 +769,10 @@ async def test_run_answers_with_valid_citations() -> None:
     result = await usecase.run(ticket.id)
 
     assert result.status == "answered"
-    assert result.answer is not None and "Сбросьте" in result.answer
+    assert result.answer is not None and "Reset your password" in result.answer
     assert result.triage is not None and result.triage["category"] == "auth"
     assert [item["path"] for item in (result.citations or [])] == ["app/module_0.py"]
+    assert [item["label"] for item in (result.citations or [])] == ["S1"]
     assert [step["step"] for step in tickets.steps] == ["triage", "investigate", "resolve"]
     assert tickets.steps[-1]["output"]["routing"]["tier"] == "strong"
     assert tickets.steps[-1]["tokens_in"] is None
@@ -551,7 +977,11 @@ async def test_run_escalates_when_resolver_decides() -> None:
     result = await usecase.run(ticket.id)
 
     assert result.status == "escalated"
-    assert "индексах нет данных" in (result.escalate_reason or "")
+    assert "indexes contain no information" in (result.escalate_reason or "")
+    assert result.localized_result is not None
+    assert result.localized_result.en == result.escalate_reason
+    assert "сведений об этой версии" in result.localized_result.ru
+    assert "此版本" in result.localized_result.zh
     assert result.answer is None
 
 
@@ -564,7 +994,7 @@ async def test_run_escalates_without_llm_when_dossier_empty() -> None:
     result = await usecase.run(ticket.id)
 
     assert result.status == "escalated"
-    assert "нет релевантного контента" in (result.escalate_reason or "")
+    assert "no content relevant" in (result.escalate_reason or "")
     assert len(gateway.calls) == 1
     resolve_steps = [s for s in tickets.steps if s["step"] == "resolve"]
     assert resolve_steps and resolve_steps[0]["output"].get("skipped_llm") is True
@@ -599,7 +1029,7 @@ async def test_run_escalates_when_refs_invalid() -> None:
     result = await usecase.run(ticket.id)
 
     assert result.status == "escalated"
-    assert "не сослалась" in (result.escalate_reason or "")
+    assert "did not cite" in (result.escalate_reason or "")
 
 
 def test_deduplication_continues_past_a_fully_repeated_rank() -> None:
@@ -674,6 +1104,17 @@ def test_dossier_counts_separators_and_truncates_oversized_first_source() -> Non
     text, visible = _format_dossier({"S1": _hit(1), "S2": _hit(2)}, 36)
     assert 0 < len(text) <= 36
     assert visible == ["S1"]
+
+
+def test_bounded_dossier_keeps_prioritized_refs_and_room_for_older_evidence() -> None:
+    dossier = {
+        "S1": replace(_hit(1), content="original evidence"),
+        "S2": replace(_hit(2), content="fresh evidence " * 100),
+    }
+    text, visible = _format_dossier(dossier, 190, priority=["S2"])
+    assert visible == ["S2", "S1"]
+    assert "fresh evidence" in text and "original evidence" in text
+    assert len(text) <= 190
 
 
 async def test_repair_usage_is_added_to_step_totals() -> None:
@@ -767,3 +1208,77 @@ def test_resolver_target_uses_cheap_only_for_simple_complexity() -> None:
         resolver_target(triage("simple"), PipelineTargets(triage=strong, strong=strong, cheap=None))
         is strong
     )
+
+
+@pytest.mark.parametrize("comment", ["Still failing after reset", "   ", None])
+async def test_rerun_supplies_previous_result_as_ticket_data(comment: str | None) -> None:
+    tickets = FakeTickets()
+    gateway = FakeGateway([TRIAGE_JSON, ANSWER_JSON, TRIAGE_JSON, ANSWER_JSON])
+    usecase = _usecase(tickets, gateway)
+    ticket = await usecase.create_ticket(1, "Admin sign-in", "HTTP 401 from /admin")
+    first = await usecase.run(ticket.id)
+    assert first.answer
+    previous_answer = first.answer
+    await usecase.run(ticket.id, comment=comment)
+    assert all("Previous run context" not in prompt for prompt in gateway.prompts[:2])
+    assert all(previous_answer in prompt for prompt in gateway.prompts[2:])
+    if comment and comment.strip():
+        assert all(comment in prompt for prompt in gateway.prompts[2:])
+    context = tickets.steps[-1]["input"]["rerun_context"]
+    assert context["previous_result"]["answer"] == previous_answer
+    assert context["comment"] == (comment.strip() or None if comment is not None else None)
+
+
+async def test_deterministic_escalation_has_three_languages_without_translation_request() -> None:
+    tickets = FakeTickets()
+    gateway = FakeGateway([TRIAGE_JSON])
+    usecase = _usecase(tickets, gateway, retrieval=FakeRetrieval(hits=[]))
+    ticket = await usecase.create_ticket(1, "HTTP 503", "The upload is unavailable")
+
+    result = await usecase.run(ticket.id)
+
+    assert result.status == "escalated"
+    assert result.localized_result is not None
+    assert result.escalate_reason == result.localized_result.en
+    assert "В индексах проекта" in result.localized_result.ru
+    assert "索引" in result.localized_result.zh
+    assert len(gateway.calls) == 1
+    assert not gateway.translation_requests
+
+
+@pytest.mark.parametrize("translation_failure", [None, "provider", "invalid"])
+async def test_answer_is_localized_after_canonical_english_analysis(
+    translation_failure: str | None,
+) -> None:
+    tickets = FakeTickets()
+    gateway = FakeGateway([TRIAGE_JSON, ANSWER_JSON])
+    gateway.translation_failure = translation_failure
+    usecase = _usecase(tickets, gateway)
+    ticket = await usecase.create_ticket(1, "Ошибка входа", "登录失败 HTTP 401")
+    profile = SolverProfile(
+        id=5, name="Default", enabled=SolverEnabled(), models=SolverModels(ticket_resolution=1)
+    )
+
+    result = await usecase.run(ticket.id, profile=profile)
+
+    assert result.status == "answered"
+    assert result.answer == "Reset your password using the recovery form."
+    assert result.english_result == result.answer
+    assert all("English" in prompt for prompt in gateway.system_prompts)
+    assert all("登录失败 HTTP 401" in prompt for prompt in gateway.prompts)
+    assert gateway.translation_requests == [{"original_language": "en", "text": result.answer}]
+    final_trace = tickets.steps[-1]
+    assert final_trace["step"] == "answer"
+    assert final_trace["model_id"] is not None
+    if translation_failure:
+        assert result.localized_result is None
+        assert final_trace["output"]["localization_status"] == "failed"
+        if translation_failure == "invalid":
+            assert (final_trace["tokens_in"], final_trace["tokens_out"]) == (23, 49)
+    else:
+        assert result.localized_result is not None
+        assert result.localized_result.en == result.answer
+        assert result.localized_result.ru == "Сбросьте пароль через форму восстановления."
+        assert result.localized_result.zh == "请通过恢复表单重置密码。"
+        assert final_trace["output"]["localization_status"] == "completed"
+        assert (final_trace["tokens_in"], final_trace["tokens_out"]) == (23, 49)

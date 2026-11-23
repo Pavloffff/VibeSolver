@@ -14,13 +14,11 @@ from app.domain.model_provider_entities import (
     WorkspaceModelEntry,
 )
 from app.domain.repositories import ModelProviderRepository, SourceRepository
+from app.domain.solver import SolverModels
 
 PROJECT_MODEL_ROLES = {
     "indexing": "embedding",
     "documentation_generation": "chat",
-    "ticket_resolution": "chat",
-    "ticket_triage": "chat",
-    "ticket_resolution_cheap": "chat",
 }
 
 
@@ -90,23 +88,19 @@ class ModelProviderUsecase:
         api_key: str | None,
     ) -> ProviderConnection:
         stored = await self._credentials(connection_id)
-        connection, definition = self._candidate(
+        new_key = (api_key or "").strip() or None
+        connection, _ = self._candidate(
             stored.provider_type,
             name,
             base_url or stored.base_url,
-            api_key if api_key else stored.api_key,
+            new_key or stored.api_key,
             connection_id,
         )
-        available_models = await asyncio.to_thread(
-            definition.adapter.list_models, connection, self._request_timeout
-        )
         updated = await self._models.update_connection(
-            connection_id, connection.name, connection.base_url, api_key
+            connection_id, connection.name, connection.base_url, new_key
         )
         if updated is None:
             raise ModelProviderNotFoundError(str(connection_id))
-        if definition.sync_all_models:
-            await self._models.upsert_models(updated.id, available_models)
         return updated
 
     async def delete_connection(self, connection_id: int) -> None:
@@ -155,6 +149,8 @@ class ModelProviderUsecase:
     async def set_project_selection(
         self, source_id: int, role: str, model_id: int | None
     ) -> dict[str, int]:
+        if role in SolverModels.model_fields:
+            raise ModelProviderValidationError("Configure ticket models in a Solver profile.")
         expected_capability = PROJECT_MODEL_ROLES.get(role)
         if expected_capability is None:
             raise ModelProviderValidationError("unsupported project model role")

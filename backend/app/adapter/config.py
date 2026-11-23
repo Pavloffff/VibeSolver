@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import PositiveInt
+from pydantic import Field, PositiveInt
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     ticket_agent_max_output_tokens: int = 8192
     ticket_context_chunks: int = 12
     ticket_max_context_characters: int = 24_000
+    diagnostic_ui_probes: dict[str, str] = Field(default_factory=dict)
+    diagnostic_web_providers: dict[str, str] = Field(default_factory=dict)
     experimental_sandbox_enabled: bool = False
     experimental_sandbox_image: str = ""
     experimental_sandbox_cpus: float = 1.0
