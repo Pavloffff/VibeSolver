@@ -1,11 +1,31 @@
 from sqlalchemy import Select, and_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.models import Import, ImportState, Source, SourceSnapshot, SourceSnapshotFile
+from app.domain.models import (
+    Import,
+    ImportState,
+    IndexRun,
+    ProjectIndex,
+    Source,
+    SourceSnapshot,
+    SourceSnapshotFile,
+)
 from app.domain.source_browser import SourceBrowserEntry, SourceBrowserObject, SourceBrowserSnapshot
 
 
 class SourceBrowserSqlRepository:
+    async def code_snapshot_for_run(self, source_id: int, run_id: int) -> int | None:
+        statement = (
+            select(IndexRun.snapshot_id)
+            .join(ProjectIndex, ProjectIndex.id == IndexRun.project_index_id)
+            .where(
+                IndexRun.id == run_id,
+                ProjectIndex.source_id == source_id,
+                ProjectIndex.index_type == "code",
+            )
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 

@@ -98,6 +98,9 @@ class FakeSearch:
 
 
 class FakeTicketLogSearch:
+    async def has_ready_logs(self, source_id: int, ticket_id: int) -> bool:
+        return ticket_id == 71
+
     async def search_dense(
         self,
         source_id: int,
@@ -251,6 +254,51 @@ async def test_ticket_log_search_returns_attachment_scoped_citation() -> None:
     assert response.hits[0].attachment_id == 4
     assert response.hits[0].event_timestamp == "2026-11-17T01:02:03Z"
     assert response.hits[0].source_ref.startswith("ticket:71:attachment:4:")
+
+
+async def test_log_intake_does_not_embed_queries_for_tickets_without_logs() -> None:
+    def unexpected_embed(*args: object) -> list[list[float]]:
+        raise AssertionError("log intake called the embedding provider without attachments")
+
+    usecase = RetrievalUsecase(
+        sources=FakeSources(),
+        indexes=FakeIndexing([]),
+        search=FakeSearch(),
+        models=FakeModels(),
+        embed=unexpected_embed,
+        rerank=None,
+        request_timeout=5,
+        ticket_log_search=FakeTicketLogSearch(),
+    )
+    response = await usecase.search_ticket_logs(1, 99, "configuration")
+    assert response.hits == []
+    assert response.meta.candidate_k == 0
+
+
+async def test_log_intake_keeps_lexical_evidence_when_embedding_is_unavailable() -> None:
+    class LexicalLogs(FakeTicketLogSearch):
+        async def search_lexical(
+            self, source_id: int, ticket_id: int, query: str, limit: int
+        ) -> list[RetrievedTicketLogChunk]:
+            return [
+                RetrievedTicketLogChunk(
+                    1, 4, ticket_id, "server.log", 2, 2, None, "ENOSPC", {}, 0.9
+                )
+            ]
+
+    usecase = RetrievalUsecase(
+        sources=FakeSources(),
+        indexes=FakeIndexing([]),
+        search=FakeSearch(),
+        models=FakeModels(selection=None),
+        embed=fake_embed,
+        rerank=None,
+        request_timeout=5,
+        ticket_log_search=LexicalLogs(),
+    )
+    result = await usecase.search_ticket_logs(1, 71, "ENOSPC")
+    assert [hit.content for hit in result.hits] == ["ENOSPC"]
+    assert result.meta.warnings
 
 
 async def test_ticket_context_embeds_once_and_combines_project_and_ticket_logs() -> None:

@@ -1,5 +1,6 @@
 from typing import Any, Protocol
 
+from app.domain.repositories.retrieval import SearchHit
 from app.domain.solver import SolverModelSnapshots, SolverProfile, TicketRerunContext, TicketRun
 from app.domain.tickets import LocalizedTicketResult, Ticket, TicketStats, TicketStep
 
@@ -12,6 +13,10 @@ class TicketRepository(Protocol):
     async def has_unready_log_attachments(self, ticket_id: int) -> bool: ...
 
     async def list_for_source(self, source_id: int) -> list[Ticket]: ...
+
+    async def search_answered_history(
+        self, source_id: int, ticket_id: int, queries: list[str]
+    ) -> list[SearchHit]: ...
 
     async def transition_status(self, ticket_id: int, expected: str, status: str) -> bool: ...
 

@@ -17,6 +17,8 @@ class RetrievedTicketLogChunk:
 
 
 class TicketLogSearchRepository(Protocol):
+    async def has_ready_logs(self, source_id: int, ticket_id: int) -> bool: ...
+
     async def search_dense(
         self,
         source_id: int,

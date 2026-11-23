@@ -65,16 +65,17 @@ def fake_s3(monkeypatch: pytest.MonkeyPatch) -> FakeS3:
 async def test_upload_zip_returns_201_with_key(
     api_client: AsyncClient, fake_s3: FakeS3
 ) -> None:
+    archive = build_zip()
     response = await api_client.post(
         "/api/v1/uploads",
-        files={"file": ("project.zip", build_zip(), "application/zip")},
+        files={"file": ("project.zip", archive, "application/zip")},
     )
     assert response.status_code == 201
     upload_key = response.json()["upload_key"]
     assert isinstance(upload_key, str)
     assert upload_key.startswith("uploads/")
     assert ("raw", upload_key) in fake_s3.objects
-    assert fake_s3.objects[("raw", upload_key)] == build_zip()
+    assert fake_s3.objects[("raw", upload_key)] == archive
 
 
 async def test_upload_tar_gz_returns_201_with_key(

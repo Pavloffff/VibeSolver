@@ -1,9 +1,14 @@
+import { useId } from 'react'
 import type { SolverGraph } from '../../../shared/api/types'
 import { useT, type TranslationKey } from '../../../shared/i18n'
+import type { layoutSolverGraph } from './solverLayout'
 
 const labels: Record<string, [TranslationKey, TranslationKey]> = {
+  log_intake: ['solver.logIntake', 'solver.logIntakeHint'],
   triage: ['solver.triage', 'solver.triageHint'],
   investigate: ['solver.investigate', 'solver.investigateHint'],
+  read_code: ['solver.readCode', 'solver.readCodeHint'],
+  recheck: ['solver.recheck', 'solver.recheckHint'],
   resolve: ['solver.resolve', 'solver.resolveHint'],
   answer: ['solver.answer', 'solver.answerHint'],
   escalate: ['solver.escalate', 'solver.escalateHint'],
@@ -23,65 +28,67 @@ export function useStepLabels() {
   }
 }
 
-function layout(graph: SolverGraph) {
-  const depths = new Map<string, number>()
-  const incoming = new Map(graph.nodes.map(node => [node.id, graph.edges.filter(edge => edge.target === node.id).map(edge => edge.source)]))
-  for (let pass = 0; pass < graph.nodes.length; pass++) {
-    for (const node of graph.nodes) {
-      if (depths.has(node.id)) continue
-      const parents = incoming.get(node.id) ?? []
-      if (parents.every(parent => depths.has(parent))) {
-        depths.set(node.id, Math.max(0, ...parents.map(parent => (depths.get(parent) ?? 0) + 1)))
-      }
-    }
-  }
-  const columns = Math.max(1, ...depths.values()) + 1
-  const positions = new Map<string, { x: number, y: number }>()
-  for (let column = 0; column < columns; column++) {
-    const group = graph.nodes.filter(node => (depths.get(node.id) ?? 0) === column)
-    group.forEach((node, index) => positions.set(node.id, {
-      x: 11 + 78 * column / (columns - 1),
-      y: 100 * (index + 1) / (group.length + 1),
-    }))
-  }
-  const maxRows = Math.max(1, ...Array.from({ length: columns }, (_, column) => graph.nodes.filter(node => (depths.get(node.id) ?? 0) === column).length))
-  return { positions, width: Math.min(23, 75 / columns), columns, maxRows }
+type Connection = ReturnType<typeof layoutSolverGraph>['connections'][number]
+
+export function SolverRoutes({ routes }: { routes: Connection[] }) {
+  const { t } = useT()
+  const { label } = useStepLabels()
+  return <ul className="solver-route-list">
+    {routes.map((route, index) => (
+      <li key={index}>{t(route.feedback ? 'solver.returnToStep' : 'solver.goToStep', { step: label(route.target) })}</li>
+    ))}
+  </ul>
 }
 
-export default function FlowDiagram({ graph, selected, onSelect, enabled }: {
+export default function FlowDiagram({ graph, layout, selected, onSelect, enabled }: {
   graph: SolverGraph
+  layout: ReturnType<typeof layoutSolverGraph>
   selected: string
   onSelect: (id: string) => void
   enabled: Record<string, boolean | undefined>
 }) {
   const { t } = useT()
   const { label } = useStepLabels()
-  const { positions, width, columns, maxRows } = layout(graph)
-  return <div className="solver-map" role="group" aria-label={t('solver.flow')} style={{ minWidth: `${columns * 190}px`, minHeight: `${Math.max(235, (maxRows + 1) * 100)}px` }}>
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" className="solver-wires">
-      {graph.edges.map(({ source, target }) => {
-        const from = positions.get(source)
-        const to = positions.get(target)
-        if (!from || !to) return null
-        const x1 = from.x + width / 2, x2 = to.x - width / 2
-        const mid = (x1 + x2) / 2
-        const bypass = to.x - from.x > 38
-        const route = bypass
-          ? `M ${from.x} ${from.y} V 86 H ${to.x} V ${to.y}`
-          : `M ${x1} ${from.y} C ${mid} ${from.y} ${mid} ${to.y} ${x2} ${to.y}`
-        return <path key={source + ':' + target} d={route} className={target === 'escalate' ? 'is-handoff' : ''} vectorEffect="non-scaling-stroke" />
-      })}
-    </svg>
-    {graph.nodes.map(node => {
-      const pos = positions.get(node.id)!
-      const off = node.optional && enabled[node.id] !== true
-      const terminal = !graph.edges.some(edge => edge.source === node.id)
-      return <button key={node.id} type="button" className={`solver-node ${off ? 'is-off' : ''} ${terminal ? 'is-terminal' : ''}`}
-        style={{ left: pos.x + '%', top: pos.y + '%', width: width + '%' }}
-        aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
-        <span className="solver-node-status"><span aria-hidden="true" />{t(off ? 'solver.off' : terminal ? 'solver.conditional' : node.optional ? 'solver.on' : 'solver.required')}</span>
-        <strong>{label(node.id)}</strong>
-      </button>
-    })}
-  </div>
+  const marker = useId()
+  const { nodes, connections, width, height, cardWidth, cardHeight } = layout
+  const showFeedback = connections.some(route => route.feedback)
+  return <>
+    {showFeedback && <p className="solver-map-legend"><span aria-hidden="true" />{t('solver.feedbackLegend')}</p>}
+    <div className="solver-map-scroll" tabIndex={0} role="group" aria-label={t('solver.flow')}>
+      <div className="solver-map" style={{ width, height }}>
+        <svg viewBox={`0 0 ${width} ${height}`} aria-hidden="true" className="solver-wires">
+          <defs>
+            <marker id={marker} markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+              <path className="solver-arrow" d="M 1 1 L 7 4 L 1 7" />
+            </marker>
+          </defs>
+          {connections.map(({ source, target, path, feedback }, index) => (
+            <path
+              key={index}
+              data-source={source}
+              data-target={target}
+              d={path}
+              markerEnd={`url(#${marker})`}
+              className={feedback ? 'is-feedback' : undefined}
+            />
+          ))}
+        </svg>
+        {graph.nodes.map(node => {
+          const pos = nodes.get(node.id)!
+          const outgoing = connections.filter(route => route.source === node.id)
+          const off = node.optional && enabled[node.id] !== true
+          const terminal = outgoing.length === 0
+          return <div key={node.id} className="solver-map-entry" style={{ left: pos.x, top: pos.y, width: cardWidth, minHeight: cardHeight }}>
+            <button type="button" className={`solver-node ${off ? 'is-off' : ''} ${terminal ? 'is-terminal' : ''}`}
+              style={{ minHeight: cardHeight }}
+              aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
+              <span className="solver-node-status"><span aria-hidden="true" />{t(off ? 'solver.off' : terminal ? 'solver.conditional' : node.optional ? 'solver.on' : 'solver.required')}</span>
+              <strong>{label(node.id)}</strong>
+            </button>
+            {outgoing.length > 0 && <div className="solver-mobile-routes"><SolverRoutes routes={outgoing} /></div>}
+          </div>
+        })}
+      </div>
+    </div>
+  </>
 }

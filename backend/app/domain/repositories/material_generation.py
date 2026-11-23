@@ -18,6 +18,12 @@ class RetrievedChunk:
     score: float
 
 
+@dataclass(frozen=True, slots=True)
+class LiteralCodeMatch:
+    chunk: RetrievedChunk
+    offset: int
+
+
 class IndexSearchRepository(Protocol):
     async def search_dense(
         self, source_id: int, index_type: str, run_id: int, vector: list[float], limit: int
@@ -26,6 +32,10 @@ class IndexSearchRepository(Protocol):
     async def search_lexical(
         self, source_id: int, index_type: str, run_id: int, query: str, limit: int
     ) -> list[RetrievedChunk]: ...
+
+    async def search_code_literal(
+        self, source_id: int, run_id: int, literal: str, limit: int
+    ) -> list[LiteralCodeMatch]: ...
 
 
 @dataclass(frozen=True, slots=True)

@@ -651,3 +651,28 @@ it('keeps the queue focus when selecting an issue on a wide layout', async () =>
   await screen.findByRole('heading', { name: 'Не работает вход' })
   expect(issue).toHaveFocus()
 })
+
+it('localizes routing stages and runtime fact labels without changing observed values', async () => {
+  const template = DETAIL.steps[0]!
+  renderPage({
+    listTickets: vi.fn().mockResolvedValue([TICKET]), getTicketStats: vi.fn().mockResolvedValue(null),
+    getTicket: vi.fn().mockResolvedValue({
+      ...DETAIL,
+      steps: [
+        { ...template, step: 'log_intake', output_data: { runtime_facts: [{ field: 'platform', value: 'Kubernetes', source_ref: 'log:5:10' }] } },
+        { ...template, step: 'read_code' },
+        { ...template, step: 'recheck', output_data: { indexes_searched: ['ticket_history', 'code'] } },
+      ],
+    }),
+    listTicketLogAttachments: vi.fn().mockResolvedValue([]),
+  })
+  fireEvent.click(await screen.findByRole('button', { name: /Не работает вход/ }))
+  const trace = await screen.findByRole('region', { name: 'Трассировка агентов' })
+  expect(within(trace).getByText('Собрать журналы обращения')).toBeVisible()
+  expect(within(trace).getByText('Дочитать исходный код')).toBeVisible()
+  expect(within(trace).getByText('Перепроверить местные материалы')).toBeVisible()
+  expect(within(trace).getByText('Платформа')).toBeVisible()
+  expect(within(trace).getByText('Kubernetes')).toBeVisible()
+  expect(within(trace).getByText('log:5:10')).toBeVisible()
+  expect(within(trace).getByText('История обращений проекта')).toBeVisible()
+})

@@ -40,6 +40,7 @@ from app.usecase.ticket_agent import (
     _interleave_deduped,
     resolver_target,
     solver_optional_stages,
+    solver_public_edges,
     solver_stage_ids,
 )
 from app.usecase.ticket_result_localization import LOCALIZATION_SYSTEM
@@ -386,8 +387,25 @@ def test_ticket_agent_uses_compiled_langgraph_with_explicit_routes() -> None:
 
     graph = usecase._graph.get_graph()
 
-    assert {"resolve_models", "triage", "investigate", "resolve", "answer"}.issubset(graph.nodes)
+    assert {
+        "resolve_models",
+        "log_intake",
+        "triage",
+        "investigate",
+        "read_code",
+        "resolve",
+        "recheck",
+        "answer",
+    }.issubset(graph.nodes)
     assert {"escalate_empty", "escalate_invalid_refs", "escalate_model"}.issubset(graph.nodes)
+    public_stages = set(solver_stage_ids())
+    compiled_edges = {
+        (edge.source, "escalate" if edge.target.startswith("escalate_") else edge.target)
+        for edge in graph.edges
+        if edge.source in public_stages
+        and (edge.target in public_stages or edge.target.startswith("escalate_"))
+    }
+    assert set(solver_public_edges()) == compiled_edges
 
 
 def test_triage_accepts_typed_specialist_recommendations() -> None:
@@ -433,13 +451,17 @@ async def test_registered_specialist_can_be_enabled_and_routed_without_graph_cha
         SPECIALIST_REGISTRY.pop(role)
 
 
-async def test_documentation_ticket_uses_short_route_even_in_augmented_profile() -> None:
+async def test_documentation_ticket_uses_cheap_resolver_and_review_in_augmented_profile() -> None:
     tickets = FakeTickets()
     triage = json.dumps(
         {**json.loads(TRIAGE_JSON), "complexity": "simple", "specialists": ["code"]}
     )
-    gateway = FakeGateway([triage, ANSWER_JSON])
-    retrieval = FakeRetrieval(hits=[replace(_hit(1), index_type="documentation")])
+    confirmed = json.dumps({**json.loads(ANSWER_JSON), "source_refs": ["S1", "S2"]})
+    review = json.dumps(
+        {"approved": True, "reason": "Implementation confirms the workflow", "source_refs": ["S2"]}
+    )
+    gateway = FakeGateway([triage, confirmed, review])
+    retrieval = FakeRetrieval(hits=[replace(_hit(1), index_type="documentation"), _hit(2)])
     usecase = _usecase(tickets, gateway, retrieval=retrieval)
     ticket = await usecase.create_ticket(1, "Инструкция", "Как восстановить пароль?")
     profile = SolverProfile(
@@ -453,12 +475,14 @@ async def test_documentation_ticket_uses_short_route_even_in_augmented_profile()
 
     assert result.status == "answered"
     assert [step["step"] for step in tickets.steps] == [
+        "log_intake",
         "triage",
         "investigate",
         "resolve",
+        "review",
         "answer",
     ]
-    assert gateway.model_ids == ["model-1", "model-2"]
+    assert gateway.model_ids == ["model-1", "model-2", "model-1"]
 
 
 async def test_disputed_code_finding_runs_one_followup_and_independent_review() -> None:
@@ -510,16 +534,21 @@ async def test_disputed_code_finding_runs_one_followup_and_independent_review() 
     assert retrieval.calls.count("admin guard implementation") == 1
     assert "ignored" not in retrieval.calls
     assert [step["step"] for step in tickets.steps] == [
+        "log_intake",
         "triage",
         "investigate",
         "code",
         "resolve",
         "review",
+        "recheck",
         "escalate",
     ]
-    assert tickets.steps[2]["output"]["source_refs"] == ["S2"]
-    assert tickets.steps[2]["input"]["refs"][0] == "S2"
-    assert tickets.steps[2]["output"]["targeted_search"] == "completed"
+    code_step = next(step for step in tickets.steps if step["step"] == "code")
+    assert code_step["output"]["source_refs"] == ["S2"]
+    assert code_step["input"]["refs"][0] == "S2"
+    assert code_step["output"]["targeted_search"] == "completed"
+    assert "Evidence does not confirm the cause" in retrieval.calls
+    assert "Could be caused by the guard" in gateway.prompts[-1]
     assert tickets.steps[-1]["output"]["evidence"]["S2"]["path"] == "app/module_7.py"
 
 
@@ -566,7 +595,9 @@ class FakeDiagnosticTools:
         self.calls.append(("ui", source_id, ticket_id))
         return self.ui
 
-    async def search_web(self, source_id: int, ticket_id: int) -> DiagnosticEvidence:
+    async def search_web(
+        self, source_id: int, ticket_id: int, *, public_signatures: tuple[str, ...] = ()
+    ) -> DiagnosticEvidence:
         self.calls.append(("web", source_id, ticket_id))
         return self.web
 
@@ -585,8 +616,8 @@ async def test_ui_diagnostics_requires_observation_for_current_visibility(
     observed: bool, baseline: bool, title: str | None
 ) -> None:
     class UnavailableRetrieval(FakeRetrieval):
-        async def search_ticket_context(
-            self, source_id: int, ticket_id: int, query: str, top_k: int
+        async def search(
+            self, source_id: int, query: str, index_types: Any, top_k: int
         ) -> SearchResponse:
             raise ProviderUnavailableError("unavailable test input")
 
@@ -773,7 +804,12 @@ async def test_run_answers_with_valid_citations() -> None:
     assert result.triage is not None and result.triage["category"] == "auth"
     assert [item["path"] for item in (result.citations or [])] == ["app/module_0.py"]
     assert [item["label"] for item in (result.citations or [])] == ["S1"]
-    assert [step["step"] for step in tickets.steps] == ["triage", "investigate", "resolve"]
+    assert [step["step"] for step in tickets.steps] == [
+        "log_intake",
+        "triage",
+        "investigate",
+        "resolve",
+    ]
     assert tickets.steps[-1]["output"]["routing"]["tier"] == "strong"
     assert tickets.steps[-1]["tokens_in"] is None
     assert len(gateway.calls) == 2
@@ -799,12 +835,13 @@ async def test_solver_profile_without_resolution_returns_evidence_to_engineer() 
     assert retrieval.calls == ["Ошибка загрузки\nHTTP 502 при сохранении"]
     assert not gateway.calls
     assert [step["step"] for step in tickets.steps] == [
+        "log_intake",
         "triage",
         "investigate",
         "resolve",
         "escalate",
     ]
-    assert tickets.steps[0]["status"] == tickets.steps[2]["status"] == "skipped"
+    assert tickets.steps[1]["status"] == tickets.steps[3]["status"] == "skipped"
     assert tickets.steps[-1]["output"]["evidence"]["S1"]["path"] == "app/module_0.py"
 
 
@@ -825,7 +862,7 @@ async def test_solver_profile_without_triage_routes_to_strong_model() -> None:
     assert result.status == "answered"
     assert [citation["path"] for citation in result.citations or []] == ["app/module_0.py"]
     assert gateway.model_ids == ["model-1"]
-    assert tickets.steps[1]["input"] == {"query_origin": "ticket"}
+    assert tickets.steps[2]["input"] == {"query_origin": "ticket"}
     assert tickets.run_models is not None
     assert tickets.run_models.ticket_triage is None
     assert tickets.run_models.ticket_resolution_cheap is None
@@ -853,8 +890,8 @@ async def test_solver_profile_snapshots_inherited_triage_model_when_dossier_is_e
     assert gateway.model_ids == ["model-1"]
     assert tickets.run_models is not None
     assert tickets.run_models.model_dump()["ticket_triage"] == {"id": 1, "display_name": "Model 1"}
-    assert tickets.steps[2]["step"] == "resolve"
-    assert tickets.steps[2]["status"] == "skipped"
+    assert tickets.steps[3]["step"] == "resolve"
+    assert tickets.steps[3]["status"] == "skipped"
     assert tickets.steps[-1]["output"]["evidence"] == {}
 
 
@@ -940,6 +977,309 @@ async def test_run_includes_current_ticket_logs_as_scoped_citations() -> None:
     assert result.citations[0]["event_timestamp"] == "2026-11-17T01:02:03Z"
 
 
+async def test_initial_logs_are_scoped_and_a_single_findings_call_precedes_triage() -> None:
+    tickets = FakeTickets()
+    retrieval = FakeRetrieval(hits=[])
+    triage = json.dumps({**json.loads(TRIAGE_JSON), "specialists": ["logs"]})
+    finding = json.dumps(
+        {
+            "status": "supported",
+            "finding": "The service runs on Linux version 2",
+            "source_refs": ["S1"],
+            "follow_up_query": "version from second search",
+        }
+    )
+    gateway = FakeGateway([finding, triage, ANSWER_JSON])
+    usecase = _usecase(tickets, gateway, retrieval=retrieval)
+    ticket = await usecase.create_ticket(1, "Service stopped", "Worker stopped unexpectedly")
+    valid = replace(
+        _hit(1),
+        index_type="ticket-log",
+        ticket_id=ticket.id,
+        attachment_id=1,
+        content="platform=linux service.version=2.4.0",
+    )
+    retrieval.log_hits = [
+        valid,
+        replace(valid, ticket_id=ticket.id + 1, content="foreign evidence"),
+    ]
+    profile = SolverProfile(
+        id=1,
+        name="Logs",
+        enabled=SolverEnabled(logs=True),
+        models=SolverModels(ticket_resolution=1),
+    )
+
+    result = await usecase.run(ticket.id, profile)
+
+    assert result.status == "answered"
+    phases = [step["step"] for step in tickets.steps]
+    assert phases[:3] == ["log_intake", "logs", "triage"]
+    assert phases.count("logs") == 1
+    assert "The service runs on Linux version 2" in gateway.prompts[1]
+    assert "2.4.0" in gateway.prompts[1]
+    assert {"field": "service_version", "value": "2.4.0", "source_ref": "S1"} in tickets.steps[0][
+        "output"
+    ]["runtime_facts"]
+    assert "S1" in gateway.prompts[1]
+    assert all("foreign evidence" not in prompt for prompt in gateway.prompts)
+
+
+async def test_inconclusive_local_proposal_runs_web_and_only_one_local_recheck() -> None:
+    documentation = replace(_hit(1), index_type="documentation")
+    web = replace(_hit(2), index_type="external_web", path="https://example.test/errors")
+    tools = FakeDiagnosticTools(
+        DiagnosticEvidence("skipped", [], "No observation"),
+        DiagnosticEvidence("completed", [web], "Public error signature"),
+    )
+    tickets = FakeTickets()
+    gateway = FakeGateway([TRIAGE_JSON, ANSWER_JSON])
+    usecase = _usecase(
+        tickets, gateway, retrieval=FakeRetrieval(hits=[documentation]), diagnostic_tools=tools
+    )
+    ticket = await usecase.create_ticket(1, "Error 401", "Internal diagnostic detail")
+    profile = SolverProfile(
+        id=1,
+        name="Check",
+        enabled=SolverEnabled(web=True),
+        models=SolverModels(ticket_resolution=1),
+    )
+
+    result = await usecase.run(ticket.id, profile)
+
+    assert result.status == "escalated"
+    assert tools.calls == [("web", 1, ticket.id)]
+    phases = [step["step"] for step in tickets.steps]
+    assert phases.count("resolve") == 1
+    assert phases.count("recheck") == 1
+    assert phases.index("resolve") < phases.index("web") < phases.index("recheck")
+    assert result.escalate_reason and "version" in result.escalate_reason
+
+
+@pytest.mark.parametrize("web_allowed", [False, True])
+async def test_recheck_uses_new_local_code_for_one_further_resolver_attempt(
+    web_allowed: bool,
+) -> None:
+    class FindsCodeAfterTriage(FakeRetrieval):
+        async def search(
+            self, source_id: int, query: str, index_types: Any, top_k: int
+        ) -> SearchResponse:
+            result = await super().search(source_id, query, index_types, top_k)
+            if query == "Browser version":
+                return SearchResponse(hits=[_hit(2)], meta=result.meta)
+            return result
+
+    documentation = replace(_hit(1), index_type="documentation")
+    web = replace(_hit(3), index_type="external_web", path="https://example.test/errors")
+    tools = FakeDiagnosticTools(
+        DiagnosticEvidence("skipped", [], "No observation"),
+        DiagnosticEvidence("completed", [web], "Public error signature"),
+    )
+    tickets = FakeTickets()
+    code_ref = "S3" if web_allowed else "S2"
+    final_answer = json.dumps({**json.loads(ANSWER_JSON), "source_refs": ["S1", code_ref]})
+    gateway = FakeGateway([TRIAGE_JSON, ANSWER_JSON, final_answer])
+    usecase = _usecase(
+        tickets,
+        gateway,
+        retrieval=FindsCodeAfterTriage(hits=[documentation]),
+        diagnostic_tools=tools,
+    )
+    ticket = await usecase.create_ticket(1, "Error 401", "Internal diagnostic detail")
+    profile = SolverProfile(
+        id=1,
+        name="Check",
+        enabled=SolverEnabled(web=web_allowed),
+        models=SolverModels(ticket_resolution=1),
+    )
+
+    result = await usecase.run(ticket.id, profile)
+
+    assert result.status == "answered"
+    assert result.citations is not None
+    assert [citation["index_type"] for citation in result.citations] == ["documentation", "code"]
+    phases = [step["step"] for step in tickets.steps]
+    assert phases.count("resolve") == 2 and phases.count("recheck") == 1
+    assert tools.calls == ([("web", 1, ticket.id)] if web_allowed else [])
+
+
+async def test_disputed_code_without_review_cannot_confirm_an_unrelated_reference() -> None:
+    triage = json.dumps({**json.loads(TRIAGE_JSON), "specialists": ["code"]})
+    finding = json.dumps(
+        {"status": "disputed", "finding": "Guard is absent in this version", "source_refs": ["S2"]}
+    )
+    tickets = FakeTickets()
+    retrieval = FakeRetrieval(hits=[_hit(1), _hit(2)])
+    gateway = FakeGateway([triage, finding, ANSWER_JSON])
+    usecase = _usecase(tickets, gateway, retrieval=retrieval)
+    ticket = await usecase.create_ticket(
+        1, "Can I open the admin portal?", "The implementation differs from the manual"
+    )
+    profile = SolverProfile(
+        id=1,
+        name="Check",
+        enabled=SolverEnabled(code=True, review=False),
+        models=SolverModels(ticket_resolution=1),
+    )
+
+    result = await usecase.run(ticket.id, profile)
+
+    assert result.status == "escalated"
+    assert "Guard is absent in this version" in retrieval.calls
+    assert [step["step"] for step in tickets.steps].count("recheck") == 1
+    assert gateway.responses == []
+
+
+async def test_review_checks_code_when_the_proposal_uses_documentation() -> None:
+    proposal = json.dumps({**json.loads(ANSWER_JSON), "source_refs": ["S1", "S2", "S3"]})
+    review = json.dumps(
+        {
+            "approved": True,
+            "reason": "The recent error is visible in the logs",
+            "source_refs": ["S1"],
+        }
+    )
+    tickets = FakeTickets()
+    retrieval = FakeRetrieval(hits=[replace(_hit(1), index_type="documentation"), _hit(2)])
+    usecase = _usecase(tickets, FakeGateway([TRIAGE_JSON, proposal, review]), retrieval=retrieval)
+    ticket = await usecase.create_ticket(
+        1, "Error 401", "The implementation differs from the manual"
+    )
+    retrieval.log_hits = [
+        replace(_hit(4), index_type="ticket-log", ticket_id=ticket.id, attachment_id=7)
+    ]
+    profile = SolverProfile(
+        id=1,
+        name="Check",
+        enabled=SolverEnabled(review=True),
+        models=SolverModels(ticket_resolution=1),
+    )
+
+    result = await usecase.run(ticket.id, profile)
+
+    assert result.status == "escalated"
+    assert (
+        next(step for step in tickets.steps if step["step"] == "review")["output"]["approved"]
+        is False
+    )
+
+
+@pytest.mark.parametrize("binding_available", [False, True])
+async def test_http_route_requires_runtime_binding_and_rechecks_literal(
+    binding_available: bool,
+) -> None:
+    docs = replace(
+        _hit(1),
+        index_type="documentation",
+        path="docs/items.md",
+        content="The endpoint is GET /items.",
+    )
+    accessor = replace(
+        _hit(2),
+        path="src/items.cpp",
+        content='GetAll() { return db.query("SELECT * FROM items"); }',
+    )
+    schema = replace(_hit(3), path="api/openapi.yaml", content="paths:\n  /items:\n    get:")
+    binding = replace(
+        _hit(4), path="config/routes.yaml", content="handler-items:\n  path: /items\n  method: GET"
+    )
+
+    class RouteRetrieval(FakeRetrieval):
+        def __init__(self, hits: list[SearchHit]) -> None:
+            super().__init__(hits=hits)
+            self.literal_calls: list[tuple[int, str, int]] = []
+
+        async def search_code_literal(
+            self, source_id: int, literal: str, top_k: int
+        ) -> list[SearchHit]:
+            self.literal_calls.append((source_id, literal, top_k))
+            return [schema, binding] if binding_available else [schema]
+
+    tickets = FakeTickets()
+    retrieval = RouteRetrieval(hits=[docs, accessor, schema])
+    proposal = json.dumps(
+        {**json.loads(ANSWER_JSON), "answer": "Call `GET /items`.", "source_refs": ["S1", "S2"]}
+    )
+    low_simple = json.dumps({**json.loads(TRIAGE_JSON), "severity": "low", "complexity": "simple"})
+    responses = [low_simple, proposal]
+    if binding_available:
+        table_answer = json.dumps(
+            {
+                **json.loads(ANSWER_JSON),
+                "answer": "| Method | Path |\n| --- | --- |\n| `GET` | `/items` |",
+                "source_refs": ["S2"],
+            }
+        )
+        responses += [
+            table_answer,
+            json.dumps(
+                {
+                    "approved": True,
+                    "reason": "The runtime registration matches",
+                    "source_refs": ["S4"],
+                }
+            ),
+        ]
+    gateway = FakeGateway(responses)
+    usecase = _usecase(tickets, gateway, retrieval=retrieval)
+    ticket = await usecase.create_ticket(4, "Listing", "Which HTTP endpoint lists items?")
+    profile = SolverProfile(
+        id=1,
+        name="Check",
+        enabled=SolverEnabled(review=True),
+        models=SolverModels(ticket_resolution=1),
+    )
+
+    result = await usecase.run(ticket.id, profile)
+
+    assert retrieval.literal_calls == [(4, "/items", 4)]
+    draft = next(step for step in tickets.steps if step["step"] == "resolve")
+    assert draft["output"]["unverified_http_routes"] == ["GET /items"]
+    if binding_available:
+        assert result.status == "answered"
+        assert result.citations and {item["path"] for item in result.citations} == {
+            "src/items.cpp",
+            "config/routes.yaml",
+        }
+        assert [step["step"] for step in tickets.steps[-2:]] == ["review", "answer"]
+        proposals = [step for step in tickets.steps if step["step"] == "resolve"]
+        assert len(proposals) == 2
+        assert proposals[-1]["output"]["http_binding_refs"] == {"GET /items": ["S4"]}
+        assert "GET /items" in gateway.prompts[-1] and "S4" in gateway.prompts[-1]
+    else:
+        assert result.status == "escalated"
+        assert result.escalate_reason and "routing registration" in result.escalate_reason
+        assert len([step for step in tickets.steps if step["step"] == "resolve"]) == 1
+
+
+async def test_low_severity_operational_answer_is_reviewed_when_current_logs_are_used() -> None:
+    simple = json.dumps({**json.loads(TRIAGE_JSON), "complexity": "simple", "severity": "low"})
+    review = json.dumps(
+        {"approved": True, "reason": "The logs support the stated failure", "source_refs": ["S1"]}
+    )
+    tickets = FakeTickets()
+    retrieval = FakeRetrieval(hits=[])
+    usecase = _usecase(tickets, FakeGateway([simple, ANSWER_JSON, review]), retrieval=retrieval)
+    ticket = await usecase.create_ticket(3, "Service interruption", "The worker was terminated")
+    retrieval.log_hits = [
+        replace(_hit(4), index_type="ticket-log", ticket_id=ticket.id, attachment_id=7)
+    ]
+    profile = SolverProfile(
+        id=1,
+        name="Check",
+        enabled=SolverEnabled(review=True),
+        models=SolverModels(ticket_resolution=1),
+    )
+
+    result = await usecase.run(ticket.id, profile)
+
+    assert result.status == "answered"
+    assert (
+        next(step for step in tickets.steps if step["step"] == "review")["output"]["approved"]
+        is True
+    )
+
+
 async def test_simple_ticket_uses_cheap_model_and_records_usage_and_cost() -> None:
     tickets = FakeTickets()
     triage = json.loads(TRIAGE_JSON)
@@ -959,7 +1299,7 @@ async def test_simple_ticket_uses_cheap_model_and_records_usage_and_cost() -> No
     await usecase.run(ticket.id)
 
     assert gateway.model_ids == ["model-3", "model-2"]
-    triage_step = tickets.steps[0]
+    triage_step = next(step for step in tickets.steps if step["step"] == "triage")
     resolve_step = tickets.steps[-1]
     assert (triage_step["tokens_in"], triage_step["tokens_out"]) == (100, 10)
     assert triage_step["cost_usd"] == pytest.approx(0.00012)
@@ -1029,7 +1369,20 @@ async def test_run_escalates_when_refs_invalid() -> None:
     result = await usecase.run(ticket.id)
 
     assert result.status == "escalated"
-    assert "did not cite" in (result.escalate_reason or "")
+    assert "exact error message or a log excerpt" in (result.escalate_reason or "")
+
+
+async def test_rechecked_escalation_keeps_the_specific_request_without_a_generic_checklist() -> (
+    None
+):
+    reason = "Please provide the notification configuration for this deployment."
+    reply = json.dumps(
+        {"decision": "escalate", "answer": None, "escalate_reason": reason, "source_refs": []}
+    )
+    usecase = _usecase(FakeTickets(), FakeGateway([TRIAGE_JSON, reply]))
+    ticket = await usecase.create_ticket(1, "Notifications", "Which flag enables reminders?")
+    result = await usecase.run(ticket.id)
+    assert result.escalate_reason == reason
 
 
 def test_deduplication_continues_past_a_fully_repeated_rank() -> None:
@@ -1126,9 +1479,10 @@ async def test_repair_usage_is_added_to_step_totals() -> None:
 
     await usecase.run(ticket.id)
 
-    assert tickets.steps[0]["tokens_in"] == 12
-    assert tickets.steps[0]["tokens_out"] == 7
-    assert tickets.steps[0]["cost_usd"] == pytest.approx(0.000026)
+    triage_step = next(step for step in tickets.steps if step["step"] == "triage")
+    assert triage_step["tokens_in"] == 12
+    assert triage_step["tokens_out"] == 7
+    assert triage_step["cost_usd"] == pytest.approx(0.000026)
 
 
 async def test_unrecoverable_json_fails_ticket() -> None:

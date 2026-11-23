@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     ticket_agent_max_output_tokens: int = 8192
     ticket_context_chunks: int = 12
     ticket_max_context_characters: int = 24_000
+    ticket_code_read_files: int = Field(default=2, ge=1)
+    ticket_code_surrounding_lines: int = Field(default=12, ge=1)
     diagnostic_ui_probes: dict[str, str] = Field(default_factory=dict)
     diagnostic_web_providers: dict[str, str] = Field(default_factory=dict)
     experimental_sandbox_enabled: bool = False

@@ -10,6 +10,17 @@ class TicketLogSearchSqlRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def has_ready_logs(self, source_id: int, ticket_id: int) -> bool:
+        return bool(
+            await self._session.scalar(
+                text(
+                    "SELECT EXISTS (SELECT 1 FROM ticket_log_attachments "
+                    "WHERE source_id = :source AND ticket_id = :ticket AND status = 'ready')"
+                ),
+                {"source": source_id, "ticket": ticket_id},
+            )
+        )
+
     async def search_dense(
         self,
         source_id: int,

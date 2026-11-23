@@ -219,3 +219,36 @@ async def test_ui_rejects_invalid_stand_observations(
     assert evidence.status == "unavailable"
     assert evidence.hits == []
     assert "secret" not in evidence.reason
+
+
+async def test_scoped_log_error_can_replace_generic_title_signature(options: ScopedOptions) -> None:
+    options.ticket_options = (False, "HTTP 500 for private service")
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert dict(request.url.params) == {"q": "ENOSPC", "format": "json"}
+        return httpx.Response(200, json={"results": []})
+
+    evidence = await adapter(httpx.MockTransport(respond)).search_web(
+        10, 20, public_signatures=("HTTP 500", "ENOSPC", "private service details")
+    )
+    assert evidence.status == "empty"
+
+
+@pytest.mark.parametrize("project_allowed", [True, False])
+async def test_web_never_sends_unvalidated_log_candidates(
+    options: ScopedOptions, project_allowed: bool
+) -> None:
+    options.project_options = ("submit", "public", project_allowed)
+    options.ticket_options = (False, "Trouble on deployment")
+    evidence = await adapter(httpx.MockTransport(unexpected_request)).search_web(
+        10, 20, public_signatures=("ENOSPC at https://private.local/secret?token=private",)
+    )
+    assert evidence.status == "skipped"
+
+
+async def test_project_denial_blocks_valid_observed_error(options: ScopedOptions) -> None:
+    options.project_options = ("submit", "public", False)
+    evidence = await adapter(httpx.MockTransport(unexpected_request)).search_web(
+        10, 20, public_signatures=("ENOSPC",)
+    )
+    assert evidence.status == "skipped"

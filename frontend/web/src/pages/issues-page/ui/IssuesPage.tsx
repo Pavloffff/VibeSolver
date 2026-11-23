@@ -26,6 +26,7 @@ const STATUS_KEYS: Record<string, TranslationKey> = {
   failed: 'issues.statusFailed',
 }
 const STEP_KEYS: Record<string, TranslationKey> = {
+  log_intake: 'solver.logIntake', read_code: 'solver.readCode', recheck: 'solver.recheck',
   triage: 'issues.stepTriage', investigate: 'issues.stepInvestigate', resolve: 'issues.stepResolve',
   answer: 'issues.stepAnswer', escalate: 'issues.stepEscalate',
   flow: 'solver.flowAgent', logs: 'solver.logsAgent', code: 'solver.codeAgent',
@@ -48,6 +49,7 @@ const SOURCE_KEYS: Record<string, TranslationKey> = {
   ui_observation: 'issues.observationTitle',
   logs: 'issueWorkspace.logSource',
   'ticket-log': 'issueWorkspace.logSource',
+  ticket_history: 'issueWorkspace.historySource',
 }
 const SEVERITY_KEYS: Record<string, TranslationKey> = {
   low: 'issueWorkspace.severityLow',
@@ -81,6 +83,8 @@ const TRACE_FIELD_KEYS: Record<string, TranslationKey> = {
   origin: 'issueWorkspace.fieldOrigin', event_timestamp: 'issueWorkspace.fieldEventTime',
   source_ref: 'issueWorkspace.sourceRef', ticket_id: 'issueWorkspace.ticketId',
   attachment_id: 'issueWorkspace.attachmentId', label: 'issueWorkspace.fieldLabel',
+  runtime_facts: 'issueWorkspace.runtimeFacts', field: 'issueWorkspace.factField', value: 'issueWorkspace.factValue',
+  indexes_searched: 'issueWorkspace.indexesSearched', scope: 'issueWorkspace.evidenceScope',
 }
 const SEARCH_STATUS_KEYS: Record<string, TranslationKey> = {
   ...STEP_STATUS_KEYS, partial: 'issueWorkspace.partial', empty: 'issueWorkspace.empty',
@@ -89,6 +93,13 @@ const SEARCH_STATUS_KEYS: Record<string, TranslationKey> = {
 const TRACE_VALUE_KEYS: Record<string, Record<string, TranslationKey>> = {
   severity: SEVERITY_KEYS,
   index_type: SOURCE_KEYS,
+  indexes_searched: SOURCE_KEYS,
+  scope: { current_ticket: 'issueWorkspace.scopeCurrentTicket' },
+  field: {
+    service_version: 'issueWorkspace.factServiceVersion', environment: 'issueWorkspace.factEnvironment',
+    platform: 'issueWorkspace.factPlatform', namespace: 'issueWorkspace.factNamespace',
+    cluster_version: 'issueWorkspace.factClusterVersion', image_tag: 'issueWorkspace.factImageTag',
+  },
   complexity: { simple: 'issueWorkspace.simple', standard: 'issueWorkspace.standard', hard: 'issueWorkspace.hard' },
   status: {
     ...STATUS_KEYS, ...STEP_STATUS_KEYS, supported: 'issueWorkspace.supported',

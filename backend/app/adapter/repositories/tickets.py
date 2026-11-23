@@ -1,10 +1,12 @@
 import json
+import re
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.repositories.retrieval import SearchHit
 from app.domain.solver import SolverModelSnapshots, SolverProfile, TicketRerunContext, TicketRun
 from app.domain.tickets import (
     TICKET_STATUSES,
@@ -12,6 +14,47 @@ from app.domain.tickets import (
     Ticket,
     TicketStats,
     TicketStep,
+)
+
+_HISTORY_STOP_WORDS = frozenset(
+    [
+        "the",
+        "and",
+        "for",
+        "from",
+        "with",
+        "how",
+        "what",
+        "when",
+        "why",
+        "does",
+        "this",
+        "that",
+        "where",
+        "cannot",
+        "could",
+        "have",
+        "using",
+        "user",
+        "issue",
+        "error",
+        "problem",
+        "project",
+        "happens",
+        "при",
+        "для",
+        "как",
+        "что",
+        "где",
+        "почему",
+        "если",
+        "или",
+        "нет",
+        "после",
+        "ошибка",
+        "проблема",
+        "проект",
+    ]
 )
 
 
@@ -57,6 +100,69 @@ class TicketSqlRepository:
             {"source_id": source_id},
         )
         return [_to_ticket(row) for row in rows.all()]
+
+    async def search_answered_history(
+        self, source_id: int, ticket_id: int, queries: list[str]
+    ) -> list[SearchHit]:
+        terms = dict.fromkeys(
+            term
+            for query in queries[:8]
+            for term in re.findall(r"[^\W_]{3,32}", query[:1500].casefold())[:16]
+            if term not in _HISTORY_STOP_WORDS
+        )
+        if not terms:
+            return []
+        result = await self._session.execute(
+            text("""
+                WITH question AS (
+                    SELECT to_tsquery('simple', :terms) AS query
+                ), recent AS (
+                    SELECT id, title, LEFT(description, 3000) AS description,
+                           LEFT(COALESCE(NULLIF(english_result, ''), answer), 1000) AS outcome,
+                           updated_at
+                    FROM tickets
+                    WHERE source_id = :source_id AND id <> :ticket_id AND status = 'answered'
+                      AND NULLIF(BTRIM(answer), '') IS NOT NULL
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT 200
+                ), leads AS (
+                    SELECT recent.*, (
+                        SETWEIGHT(to_tsvector('simple', title), 'A') ||
+                        SETWEIGHT(to_tsvector('simple', description), 'B')
+                    ) AS searchable
+                    FROM recent
+                )
+                SELECT id, LEFT(title, 200) AS title, LEFT(description, 600) AS description,
+                       outcome, ts_rank_cd(searchable, question.query) AS score
+                FROM leads CROSS JOIN question
+                WHERE searchable @@ question.query
+                ORDER BY score DESC, updated_at DESC, id DESC
+                LIMIT 3
+            """),
+            {
+                "source_id": source_id,
+                "ticket_id": ticket_id,
+                "terms": " | ".join(list(terms)[:24]),
+            },
+        )
+        return [
+            SearchHit(
+                index_type="ticket_history",
+                run_id=0,
+                path=f"tickets/{row.id}",
+                branch="answered",
+                start_line=None,
+                end_line=None,
+                symbol=None,
+                content=(
+                    f"Historical case (lead only)\nTitle: {row.title}\n"
+                    f"Report: {row.description}\nPrevious outcome: {row.outcome}"
+                ),
+                score=float(row.score),
+                ticket_id=int(row.id),
+            )
+            for row in result
+        ]
 
     async def transition_status(self, ticket_id: int, expected: str, status: str) -> bool:
         result = await self._session.execute(

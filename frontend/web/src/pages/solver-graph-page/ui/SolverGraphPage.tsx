@@ -1,10 +1,11 @@
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
+import { useMemo, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { ApiClient, getErrorMessage } from '../../../shared/api/client'
 import type { DiagnosticTools, SolverProfileInput, SolverGraph, SolverProfile, WorkspaceModel } from '../../../shared/api/types'
 import { getApiBaseUrl } from '../../../shared/config'
 import { useT, type TranslationKey } from '../../../shared/i18n'
 import { getApplyQueues, type DiagnosticInput } from './autoApply'
-import FlowDiagram, { useStepLabels } from './FlowDiagram'
+import FlowDiagram, { SolverRoutes, useStepLabels } from './FlowDiagram'
+import { layoutSolverGraph } from './solverLayout'
 import './solver.css'
 
 type Props = { projectId: number; api?: ApiClient }
@@ -181,6 +182,7 @@ type EditorProps = Required<Props> & {
 function ProfileEditor({ api, projectId, graph, profile, initial, choices, queues, onApplied, onRemoved, onSelect, onClone, onCancel }: EditorProps) {
   const { t } = useT()
   const steps = useStepLabels()
+  const layout = useMemo(() => layoutSolverGraph(graph), [graph])
   const queue = profile ? queues.profile(profile.id) : queues.create
   const write = useSyncExternalStore(queue.subscribe, queue.getSnapshot)
   const lastWrite = useRef(write)
@@ -280,7 +282,7 @@ function ProfileEditor({ api, projectId, graph, profile, initial, choices, queue
           <button type="button" className="btn" onClick={() => void remove()}>{t('solver.remove')}</button></div>
         {deleteError && <p role="alert" className="error">{deleteError}</p>}
       </div>}
-      <section className="solver-flow"><h2>{t('solver.flow')}</h2><FlowDiagram graph={graph} selected={step} enabled={draft.enabled} onSelect={setStep} /></section>
+      <section className="solver-flow"><h2>{t('solver.flow')}</h2><FlowDiagram graph={graph} layout={layout} selected={step} enabled={draft.enabled} onSelect={setStep} /></section>
       <section className="solver-inspector"><div><small>{t('solver.inspect')}</small><h2>{steps.label(step)}</h2><p>{steps.description(step)}</p>
         {toggle && !draft.enabled[toggle] && <p>{t(toggle === 'triage' ? 'solver.triageOff' : toggle === 'resolve' ? 'solver.resolveOff' : 'solver.specialistOff')}</p>}</div>
         <div className="solver-controls">
@@ -291,7 +293,7 @@ function ProfileEditor({ api, projectId, graph, profile, initial, choices, queue
             {draft.enabled.triage && <>{modelSelect('ticket_resolution_cheap', 'solver.light')}<p>{t('solver.lightHint')}</p></>}</>}
           {toggle && draft.enabled[toggle] && <p>{t('solver.providerHint')}</p>}
           {toggle && ['flow', 'logs', 'code'].includes(toggle) && <p>{t('solver.specialistModelHint')}</p>}
-          {!toggle && graph.edges.some(edge => edge.source === step) && <div><small>{t('solver.next')}</small><p>{graph.edges.filter(edge => edge.source === step).map(edge => steps.label(edge.target)).join(' · ')}</p></div>}
+          {layout.connections.some(route => route.source === step) && <div><small>{t('solver.next')}</small><SolverRoutes routes={layout.connections.filter(route => route.source === step)} /></div>}
         </div>
       </section>
       <footer>

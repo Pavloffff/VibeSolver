@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 import SolverGraphPage from '../pages/solver-graph-page'
 import { I18nProvider } from '../shared/i18n'
@@ -192,4 +192,34 @@ it('edits specialist switches and project diagnostic tools', async () => {
   fireEvent.click(screen.getByRole('checkbox', { name: 'Allow web search' }))
   await waitFor(() => expect(api.setDiagnosticTools).toHaveBeenCalledWith(5, { ui_probe: null, web_provider: 'search-a', allow_web_search: true }))
   expect(screen.queryByRole('button', { name: /Save changes|Save diagnostic tools/ })).not.toBeInTheDocument()
+})
+
+it('draws a feedback loop without collapsing later stages into the first column', async () => {
+  const nodes = ['log_intake', 'triage', 'read_code', 'resolve', 'review', 'web', 'recheck', 'answer', 'escalate']
+  const links = [
+    ['log_intake', 'triage'], ['triage', 'read_code'], ['read_code', 'resolve'],
+    ['resolve', 'review'], ['review', 'answer'], ['review', 'web'], ['web', 'recheck'],
+    ['recheck', 'resolve'], ['recheck', 'escalate'],
+  ]
+  renderGraph({
+    getSolverGraph: vi.fn().mockResolvedValue({
+      ...supportGraph, profiles: [supportProfile],
+      nodes: nodes.map(id => ({ id, optional: id === 'web' })),
+      edges: links.map(([source, target]) => ({ source, target })),
+    }),
+    listWorkspaceModels: vi.fn().mockResolvedValue([installedModel]),
+  })
+
+  const graph = await screen.findByRole('group', { name: 'Execution path' })
+  const positions = Array.from(graph.querySelectorAll<HTMLElement>('.solver-map-entry'), node => [node.style.left, node.style.top].join(','))
+  expect(positions).toHaveLength(nodes.length)
+  expect(new Set(positions).size).toBe(nodes.length)
+  expect(new Set(positions.map(position => position.split(',')[0])).size).toBeGreaterThan(5)
+  const feedback = graph.querySelector('[data-source="recheck"][data-target="resolve"]')
+  expect(feedback).toHaveClass('is-feedback')
+  expect(graph.querySelector('[data-source="review"][data-target="web"]')).not.toHaveClass('is-feedback')
+
+  fireEvent.click(screen.getByRole('button', { name: /Recheck local evidence/ }))
+  const inspector = screen.getByRole('heading', { name: 'Recheck local evidence' }).closest('section')!
+  expect(within(inspector).getByText('Return to an earlier step: Prepare answer')).toBeInTheDocument()
 })

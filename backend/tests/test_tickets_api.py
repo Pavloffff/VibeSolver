@@ -190,6 +190,7 @@ async def test_solver_profiles_preserve_run_boundaries_and_legacy_steps(
     for run in history["runs"]:
         steps = [step for step in history["steps"] if step["run_id"] == run["id"]]
         assert [(step["step"], step["status"]) for step in steps] == [
+            ("log_intake", "skipped"),
             ("triage", "skipped"),
             ("investigate", "completed"),
             ("resolve", "skipped"),

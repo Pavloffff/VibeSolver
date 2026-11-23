@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapter.config import Settings
 from app.adapter.repositories.diagnostic_options import DiagnosticOptionsRepository
-from app.domain.diagnostic_tools import DiagnosticEvidence
+from app.domain.diagnostic_tools import DiagnosticEvidence, choose_public_signature
 from app.domain.repositories.retrieval import SearchHit
 from app.domain.ui_observation import UiObservation
 
@@ -21,26 +21,6 @@ MAX_WEB_RESULTS = 3
 MAX_WEB_URL = 1024
 MAX_WEB_TITLE = 200
 MAX_WEB_SNIPPET = 1200
-PUBLIC_ERROR_SIGNATURES = (
-    "HTTP 400",
-    "HTTP 401",
-    "HTTP 403",
-    "HTTP 404",
-    "HTTP 408",
-    "HTTP 429",
-    "HTTP 500",
-    "HTTP 502",
-    "HTTP 503",
-    "HTTP 504",
-    "ECONNREFUSED",
-    "ECONNRESET",
-    "ENOSPC",
-    "ETIMEDOUT",
-    "OOMKilled",
-)
-PUBLIC_ERROR_PATTERN = re.compile(
-    r"\b(?ai:" + "|".join(map(re.escape, PUBLIC_ERROR_SIGNATURES)) + r")\b"
-)
 TAG_PATTERN = re.compile(r"<[^<>]*>")
 DOMAIN_PATTERN = re.compile(
     r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?"
@@ -92,7 +72,9 @@ class DiagnosticToolsAdapter:
             "Observed the configured test stand.",
         )
 
-    async def search_web(self, source_id: int, ticket_id: int) -> DiagnosticEvidence:
+    async def search_web(
+        self, source_id: int, ticket_id: int, *, public_signatures: tuple[str, ...] = ()
+    ) -> DiagnosticEvidence:
         ticket = await self._options.ticket(source_id, ticket_id)
         if ticket is None:
             return DiagnosticEvidence("skipped", [], "The ticket is outside the project scope.")
@@ -104,7 +86,7 @@ class DiagnosticToolsAdapter:
         if not base_url:
             return DiagnosticEvidence("skipped", [], "The project has no configured web provider.")
 
-        signature = _public_signature(title)
+        signature = choose_public_signature(title, public_signatures)
         if signature is None:
             return DiagnosticEvidence(
                 "skipped", [], "No approved public error signature was found."
@@ -178,20 +160,6 @@ def _ui_hit(ticket_id: int, observation: UiObservation, origin: str, label: str)
         score=1.0,
         ticket_id=ticket_id,
         event_timestamp=observed_at,
-    )
-
-
-def _public_signature(text: str) -> str | None:
-    match = PUBLIC_ERROR_PATTERN.search(text)
-    if match is None:
-        return None
-    return next(
-        (
-            signature
-            for signature in PUBLIC_ERROR_SIGNATURES
-            if signature.casefold() == match.group().casefold()
-        ),
-        None,
     )
 
 

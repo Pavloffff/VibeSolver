@@ -15,6 +15,7 @@ from app.adapter.repositories import (
     TicketSqlRepository,
 )
 from app.adapter.repositories.solver import SolverSqlRepository
+from app.adapter.repositories.source_browser import SourceBrowserSqlRepository
 from app.adapter.repositories.ticket_logs import TicketLogSqlRepository
 from app.adapter.ticket_log_storage import build_ticket_log_storage
 from app.adapter.ticket_log_tasks import run_ticket_log_attachment
@@ -24,6 +25,7 @@ from app.domain.solver import SolverProfileNotFoundError
 from app.domain.ticket_logs import TicketLogAttachment
 from app.domain.tickets import Ticket, TicketConflictError, TicketNotFoundError, TicketStep
 from app.handler.routes.search import build_retrieval_usecase
+from app.handler.routes.source_browser import build_usecase as build_source_browser
 from app.handler.schemas import (
     TicketArchivePreviewOut,
     TicketBriefOut,
@@ -47,6 +49,7 @@ from app.usecase.ticket_archive import (
     TicketArchiveError,
     read_ticket_archive,
 )
+from app.usecase.ticket_code_reader import TicketCodeReader
 from app.usecase.ticket_log_uploads import TicketLogUploadError, validate_log_archive_upload
 
 router = APIRouter(tags=["tickets"])
@@ -62,11 +65,17 @@ def build_ticket_usecase(session: AsyncSession) -> TicketAgentUsecase:
         retrieval=build_retrieval_usecase(session),
         gateway=MaterialGenerationAdapter(),
         diagnostic_tools=DiagnosticToolsAdapter(session, settings),
+        code_reader=TicketCodeReader(
+            SourceBrowserSqlRepository(session).code_snapshot_for_run,
+            build_source_browser(session).file,
+            settings.ticket_code_surrounding_lines,
+        ),
         config=TicketAgentConfig(
             timeout_seconds=settings.ticket_agent_timeout_seconds,
             max_output_tokens=settings.ticket_agent_max_output_tokens,
             context_chunks=settings.ticket_context_chunks,
             max_context_characters=settings.ticket_max_context_characters,
+            code_read_files=settings.ticket_code_read_files,
         ),
     )
 

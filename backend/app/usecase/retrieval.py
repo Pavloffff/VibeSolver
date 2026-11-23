@@ -1,12 +1,14 @@
 import asyncio
 import time
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 from app.domain.entities import SourceNotFoundError
-from app.domain.model_provider_entities import ProviderCredentials
+from app.domain.model_provider_entities import ProviderCredentials, ProviderUnavailableError
 from app.domain.repositories.indexing import IndexingRepository
 from app.domain.repositories.material_generation import (
     IndexSearchRepository,
+    LiteralCodeMatch,
     RetrievedChunk,
 )
 from app.domain.repositories.model_providers import ModelProviderRepository
@@ -25,6 +27,11 @@ from app.domain.repositories.ticket_log_search import (
 )
 
 RRF_K = 60
+PROJECT_EVIDENCE_ORDER = ("user_flow", "documentation", "code")
+MAX_LITERAL_RESULTS = 8
+MAX_LITERAL_LENGTH = 256
+LITERAL_EXCERPT_CHARACTERS = 1200
+LITERAL_EXCERPT_SURROUNDING_LINES = 6
 
 
 def rank_with_rrf(
@@ -93,6 +100,8 @@ class RetrievalUsecase:
         query: str,
         index_types: Sequence[str] | None = None,
         top_k: int = 8,
+        *,
+        evidence_coverage: bool = False,
     ) -> SearchResponse:
         started = time.monotonic()
         normalized_query = query.strip()
@@ -101,6 +110,8 @@ class RetrievalUsecase:
         if await self._sources.get_any(source_id) is None:
             raise SourceNotFoundError(f"project not found: {source_id}")
         runs = await self._active_runs(source_id, index_types)
+        if evidence_coverage:
+            runs = {kind: runs[kind] for kind in (*PROJECT_EVIDENCE_ORDER, *runs) if kind in runs}
         credentials, provider_model_id, _model_id = await self._embedding_target(source_id)
         vectors = await asyncio.to_thread(
             self._embed, credentials, provider_model_id, [normalized_query], self._request_timeout
@@ -128,7 +139,10 @@ class RetrievalUsecase:
                 rerank_applied = bool(hits)
             except Exception as exc:  # noqa: BLE001
                 warnings.append(f"rerank failed, hybrid ranking used: {exc}"[:200])
-        if not hits:
+        if evidence_coverage:
+            fused_hits = [_to_hit(chunk, score, runs) for chunk, score in ranked]
+            hits = _project_evidence_hits(hits, fused_hits, runs, top_k)
+        elif not hits:
             hits = [_to_hit(chunk, score, runs) for chunk, score in ranked[:top_k]]
         return SearchResponse(
             hits=hits,
@@ -142,6 +156,39 @@ class RetrievalUsecase:
             ),
         )
 
+    async def search_project_evidence(
+        self, source_id: int, query: str, top_k: int
+    ) -> SearchResponse:
+        return await self.search(source_id, query, top_k=top_k, evidence_coverage=True)
+
+    async def search_code_literal(
+        self, source_id: int, literal: str, top_k: int = 4
+    ) -> list[SearchHit]:
+        if (
+            not 3 <= len(literal) <= MAX_LITERAL_LENGTH
+            or not literal.isprintable()
+            or sum(character.isalnum() for character in literal) < 2
+            or top_k < 1
+        ):
+            return []
+        if await self._sources.get_any(source_id) is None:
+            raise SourceNotFoundError(f"project not found: {source_id}")
+        try:
+            runs = await self._active_runs(source_id, ("code",))
+        except SearchUnavailableError:
+            return []
+        matches = await self._search.search_code_literal(
+            source_id, runs["code"], literal, min(top_k, MAX_LITERAL_RESULTS)
+        )
+        excerpts = (
+            _literal_excerpt(match, len(literal))
+            for match in matches
+            if match.offset >= 0 and match.chunk.content.startswith(literal, match.offset)
+        )
+        return [
+            _to_hit(excerpt, excerpt.score, runs) for excerpt in excerpts if excerpt is not None
+        ]
+
     async def search_ticket_logs(
         self, source_id: int, ticket_id: int, query: str, top_k: int = 8
     ) -> SearchResponse:
@@ -153,18 +200,30 @@ class RetrievalUsecase:
             raise SearchUnavailableError("ticket log search is unavailable")
         if await self._sources.get_any(source_id) is None:
             raise SourceNotFoundError(f"project not found: {source_id}")
-        credentials, provider_model_id, embedding_model_id = await self._embedding_target(source_id)
-        vectors = await asyncio.to_thread(
-            self._embed,
-            credentials,
-            provider_model_id,
-            [normalized_query],
-            self._request_timeout,
-        )
+        if not await self._ticket_log_search.has_ready_logs(source_id, ticket_id):
+            return SearchResponse(
+                hits=[],
+                meta=SearchMeta([], top_k, 0, False, [], (time.monotonic() - started) * 1000),
+            )
         candidate_k = max(top_k * 4, 32)
-        dense = await self._ticket_log_search.search_dense(
-            source_id, ticket_id, embedding_model_id, vectors[0], candidate_k
-        )
+        warnings: list[str] = []
+        dense: list[RetrievedTicketLogChunk] = []
+        try:
+            credentials, provider_model_id, embedding_model_id = await self._embedding_target(
+                source_id
+            )
+            vectors = await asyncio.to_thread(
+                self._embed,
+                credentials,
+                provider_model_id,
+                [normalized_query],
+                self._request_timeout,
+            )
+            dense = await self._ticket_log_search.search_dense(
+                source_id, ticket_id, embedding_model_id, vectors[0], candidate_k
+            )
+        except (SearchUnavailableError, ProviderUnavailableError, OSError):
+            warnings.append("Embedding unavailable; searched attached logs by text.")
         lexical = await self._ticket_log_search.search_lexical(
             source_id, ticket_id, normalized_query, candidate_k
         )
@@ -174,7 +233,6 @@ class RetrievalUsecase:
         )
         logs_by_id = {item.chunk_id: item for item in [*dense, *lexical]}
         ranked = [(logs_by_id[chunk.chunk_id], score) for chunk, score in ranked_chunks]
-        warnings: list[str] = []
         hits: list[SearchHit] = []
         rerank_applied = False
         if self._rerank is not None and ranked:
@@ -339,6 +397,62 @@ class RetrievalUsecase:
         if credentials is None:
             raise SearchUnavailableError("the embedding model provider is unavailable")
         return credentials, model.provider_model_id, model_id
+
+
+def _literal_excerpt(match: LiteralCodeMatch, literal_length: int) -> RetrievedChunk | None:
+    chunk = match.chunk
+    lines = chunk.content.splitlines(keepends=True)
+    within_line = match.offset
+    for index, line in enumerate(lines):
+        if within_line < len(line):
+            break
+        within_line -= len(line)
+    else:
+        return None
+
+    start = end = index
+    if len(line) > LITERAL_EXCERPT_CHARACTERS:
+        flank = (LITERAL_EXCERPT_CHARACTERS - literal_length) // 2
+        start_char = max(0, min(within_line - flank, len(line) - LITERAL_EXCERPT_CHARACTERS))
+        excerpt = line[start_char : start_char + LITERAL_EXCERPT_CHARACTERS]
+    else:
+        remaining = LITERAL_EXCERPT_CHARACTERS - len(line)
+        for _ in range(LITERAL_EXCERPT_SURROUNDING_LINES):
+            if start and len(lines[start - 1]) <= remaining:
+                start -= 1
+                remaining -= len(lines[start])
+            if end + 1 < len(lines) and len(lines[end + 1]) <= remaining:
+                end += 1
+                remaining -= len(lines[end])
+        excerpt = "".join(lines[start : end + 1])
+
+    first_line = chunk.start_line
+    return replace(
+        chunk,
+        content=excerpt.removesuffix("\n").removesuffix("\r"),
+        start_line=first_line + start if first_line is not None else None,
+        end_line=first_line + end if first_line is not None else None,
+    )
+
+
+def _project_evidence_hits(
+    reranked: list[SearchHit],
+    fused: list[SearchHit],
+    runs: Mapping[str, int],
+    limit: int,
+) -> list[SearchHit]:
+    candidates = [*reranked, *fused]
+    by_kind: dict[str, SearchHit] = {}
+    for hit in candidates:
+        by_kind.setdefault(hit.index_type, hit)
+    kind_order = ("code", *runs) if limit < len(by_kind) else tuple(runs)
+    preferred = [by_kind[kind] for kind in kind_order if kind in by_kind]
+    selected: dict[str, SearchHit] = {}
+    for hit in (*preferred, *candidates):
+        selected.setdefault(hit.source_ref, hit)
+        if len(selected) >= limit:
+            break
+    return list(selected.values())
 
 
 def _to_hit(

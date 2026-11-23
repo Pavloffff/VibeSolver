@@ -14,24 +14,35 @@ class SpecialistDefinition:
 SPECIALIST_REGISTRY: dict[str, SpecialistDefinition] = {
     "flow": SpecialistDefinition(
         frozenset({"user_flow", "documentation"}),
-        "Verify expected behavior against documented user flows.",
+        "Identify the documented user path and any assumptions or missing steps. Compare it "
+        "with observed behavior; treat undocumented or conflicting behavior as a gap to verify "
+        "against implementation.",
         short_route_evidence=True,
     ),
     "logs": SpecialistDefinition(
         frozenset({"ticket-log"}),
-        "Connect symptoms to events in the attached logs and distinguish correlation from cause.",
+        "Connect symptoms to exact events in the attached logs. Cite observed service or deploy "
+        "versions, platform, and settings explicitly applied at runtime only when a concrete "
+        "line confirms them. Separate configured defaults, actual values, guesses, and absence "
+        "of evidence. Distinguish correlation from cause.",
         ticket_scoped=True,
         run_with_evidence=True,
     ),
     "code": SpecialistDefinition(
-        frozenset({"code"}), "Check the reported behavior against the implementation."
+        frozenset({"code"}),
+        "Trace the relevant branch from the reported operation to the implementation. Verify "
+        "documented behavior and settings against the actual code. Distinguish a mismatch, "
+        "an unobserved deployed version, and a confirmed defect before concluding.",
     ),
 }
 
 _RESERVED_ROLES = frozenset(
     {
         "triage",
+        "log_intake",
         "investigate",
+        "read_code",
+        "recheck",
         "ui",
         "web",
         "resolve",
