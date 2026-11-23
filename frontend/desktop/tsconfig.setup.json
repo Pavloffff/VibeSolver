@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "outDir": "dist/setup"
+  },
+  "include": ["src/config-renderer.ts", "src/global.d.ts"],
+  "exclude": []
+}

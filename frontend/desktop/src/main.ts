@@ -1,10 +1,12 @@
 ﻿import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron';
+import { shell } from 'electron';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { DEFAULT_LANG, t, type Lang } from './i18n';
+import { DEFAULT_LANG, isLang, t, type Lang } from './i18n';
 import {
+  localApiUrl,
   normalizeServerUrl,
   parseConfigValue,
   readConfig,
@@ -137,7 +139,7 @@ function registerAppProtocol(): void {
   });
 }
 
-function createWindow(apiUrl: string): BrowserWindow {
+function createWindow(apiUrl: string, lang: Lang): BrowserWindow {
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -149,6 +151,8 @@ function createWindow(apiUrl: string): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       additionalArguments: [
+        `--vs-local-url=${localApiUrl()}`,
+        `--vs-language=${lang}`,
         ...(apiUrl.length > 0 ? [`--vs-api-url=${apiUrl}`] : []),
       ],
     },
@@ -371,20 +375,45 @@ async function runStartupFlow(config: VibesolverConfig, window: BrowserWindow): 
 
 async function restartWithConfig(config: VibesolverConfig): Promise<void> {
   await sleep(RESTART_DELAY_MS);
+  const latest = readConfig();
+  if (!latest || latest.mode !== config.mode || latest.serverUrl !== config.serverUrl) return;
   const previous = mainWindow;
   const serverUrl = resolveServerUrl(config);
-  const window = createWindow(serverUrl ?? '');
+  const window = createWindow(serverUrl ?? '', latest.lang);
   setMainWindow(window);
   if (previous !== null && !previous.isDestroyed()) {
     previous.destroy();
   }
-  await runStartupFlow(config, window);
+  await runStartupFlow(latest, window);
 }
 
 function registerIpcHandlers(): void {
   ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('observer:open', async (_event, requestedLang: unknown): Promise<SaveConfigResult> => {
+    const lang = isLang(requestedLang) ? requestedLang : currentLang();
+    try {
+      const directory = path.join(app.getPath('userData'), 'ui-observer');
+      await fs.promises.mkdir(directory, { recursive: true });
+      const html = await fs.promises.readFile(path.join(webRootDir(), 'ui-observer.html'), 'utf8');
+      const helperPath = path.join(directory, `ui-observer-${lang}.html`);
+      await Promise.all([
+        fs.promises.writeFile(helperPath, html.replace('<html lang="en">', `<html lang="${lang}">`), 'utf8'),
+        fs.promises.copyFile(path.join(webRootDir(), 'ui-observer.js'), path.join(directory, 'ui-observer.js')),
+      ]);
+      const error = await shell.openPath(helperPath);
+      return { ok: error.length === 0 };
+    } catch {
+      return { ok: false };
+    }
+  });
 
   ipcMain.handle('config:get', () => readConfig());
+  ipcMain.handle('config:language', (_event, lang: unknown): SaveConfigResult => {
+    const config = readConfig();
+    if (!config || !isLang(lang)) return { ok: false };
+    writeConfig({ ...config, lang });
+    return { ok: true };
+  });
 
   ipcMain.handle('config:save', (_event, value: unknown): SaveConfigResult => {
     const lang = currentLang();
@@ -394,7 +423,7 @@ function registerIpcHandlers(): void {
     }
     const serverUrl = resolveServerUrl(config);
     if (serverUrl === null) {
-      return { ok: false, error: t('invalidUrl', lang) };
+      return { ok: false, error: t('invalidUrl', config.lang) };
     }
     const normalized: VibesolverConfig = { mode: config.mode, serverUrl, lang: config.lang };
     writeConfig(normalized);
@@ -412,8 +441,8 @@ function registerIpcHandlers(): void {
     return { ok: true };
   });
 
-  ipcMain.handle('health:check', async (_event, value: unknown): Promise<HealthCheckResult> => {
-    const lang = currentLang();
+  ipcMain.handle('health:check', async (_event, value: unknown, requestedLang: unknown): Promise<HealthCheckResult> => {
+    const lang = isLang(requestedLang) ? requestedLang : currentLang();
     if (typeof value !== 'string') {
       return { ok: false, error: t('invalidUrl', lang) };
     }
@@ -440,7 +469,7 @@ async function launchApplication(): Promise<void> {
   registerIpcHandlers();
   registerAppProtocol();
   const config = readConfig();
-  const window = createWindow(config === null ? '' : resolveServerUrl(config) ?? '');
+  const window = createWindow(config === null ? '' : resolveServerUrl(config) ?? '', config?.lang ?? DEFAULT_LANG);
   setMainWindow(window);
   if (config === null) {
     showConfigScreen(window);

@@ -40,8 +40,8 @@ describe('SourcesPage', () => {
     )
     expect(await screen.findByText('main repo')).toBeInTheDocument()
     expect(screen.getByText('docs')).toBeInTheDocument()
-    expect(screen.getByText('git')).toBeInTheDocument()
-    expect(screen.getByText('local_folder')).toBeInTheDocument()
+    expect(screen.getByText('Git')).toBeInTheDocument()
+    expect(screen.getByText('Локальная папка')).toBeInTheDocument()
     expect(screen.getByText('Успешно')).toBeInTheDocument()
     expect(screen.getByText('—')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'main repo' })).toBeInTheDocument()
@@ -72,4 +72,15 @@ describe('SourcesPage', () => {
     expect(screen.getByText('Done')).toBeInTheDocument()
     expect(screen.getByText('Import status')).toBeInTheDocument()
   })
+})
+
+it('localizes archive type in the Chinese project list while keeping the project name', async () => {
+  localStorage.setItem('vibesolver.lang', 'zh')
+  const api = {
+    listSources: vi.fn().mockResolvedValue([{ ...sources[0], type: 'archive' }]),
+  } as unknown as ApiClient
+  render(<I18nProvider><SourcesPage api={api} /></I18nProvider>)
+  expect(await screen.findByRole('button', { name: 'main repo' })).toBeInTheDocument()
+  expect(screen.getByText('项目压缩包')).toBeInTheDocument()
+  expect(screen.queryByText('archive')).not.toBeInTheDocument()
 })

@@ -1,6 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useRef, useState } from 'react'
 import { ApiClient, getErrorMessage } from '../../../shared/api/client'
-import { DEFAULT_SERVER_URL, getApiBaseUrl } from '../../../shared/config'
+import { getLocalServerUrl } from '../../../shared/config'
 import { useT } from '../../../shared/i18n'
 import { LANGS } from '../../../shared/i18n'
 import type { Lang, TranslationKey } from '../../../shared/i18n'
@@ -11,7 +11,8 @@ import { isExperimentalEnabled } from '../../../shared/state/settings'
 type CheckState = 'idle' | 'checking' | 'ok' | 'err'
 
 interface Props {
-  onSaved?: () => void
+  connection?: AppSettings
+  onConnectionChange?: (next: AppSettings) => void
   theme?: Theme
   onThemeChange?: (theme: Theme) => void
   experimental?: boolean
@@ -24,54 +25,89 @@ const LANGUAGE_LABEL_KEYS: Record<Lang, TranslationKey> = {
   zh: 'settings.languageZh',
 }
 
-export default function SettingsPage({ onSaved, theme = 'light', onThemeChange, experimental = isExperimentalEnabled(), onExperimentalChange }: Props) {
+export default function SettingsPage({ connection, onConnectionChange, theme = 'light', onThemeChange, experimental = isExperimentalEnabled(), onExperimentalChange }: Props) {
   const { lang, setLang, t } = useT()
-  const [settings, setSettings] = useState<AppSettings>(() => getSettings() ?? { mode: 'local', serverUrl: DEFAULT_SERVER_URL })
+  const [settings, setSettings] = useState<AppSettings>(() => connection ?? getSettings() ?? { mode: 'local', serverUrl: getLocalServerUrl() })
+  const applied = useRef(settings)
+  const remoteAddress = useRef(settings.mode === 'remote' ? settings.serverUrl : '')
+  const pending = useRef<AppSettings | null>(null)
+  const languageChange = useRef(0)
+  const checkId = useRef(0)
+  const [invalidAddress, setInvalidAddress] = useState(false)
   const [checkState, setCheckState] = useState<CheckState>('idle')
-  const [checkError, setCheckError] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
+  const [checkError, setCheckError] = useState<unknown>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  const update = (patch: Partial<AppSettings>) => {
-    setSettings((prev) => ({ ...prev, ...patch }))
-    setSaved(false)
+  const edit = (value: AppSettings) => {
+    setSettings(value)
+    setInvalidAddress(false)
     setSaveError(null)
+    checkId.current++
+    setCheckState('idle')
   }
 
   const checkConnection = async () => {
+    const id = ++checkId.current
     setCheckState('checking')
-    setCheckError(null)
     try {
       await new ApiClient(() => settings.serverUrl).checkHealth()
-      setCheckState('ok')
+      if (id === checkId.current) setCheckState('ok')
     } catch (error) {
-      setCheckError(getErrorMessage(error))
-      setCheckState('err')
+      if (id === checkId.current) {
+        setCheckError(error)
+        setCheckState('err')
+      }
     }
   }
 
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    const serverUrl = settings.serverUrl.trim()
-    const bridge = typeof window !== 'undefined' ? window.vibesolver : undefined
-    if (bridge !== undefined) {
-      const result = await bridge.saveConfig({
-        mode: settings.mode,
-        serverUrl: settings.mode === 'remote' ? serverUrl : getApiBaseUrl(),
-        lang,
-      })
-      if (!result.ok) {
-        setSaved(false)
-        setSaveError(result.error ?? t('settings.saveFailed'))
-        return
-      }
-    } else {
-      saveSettings({ mode: settings.mode, serverUrl })
+  const apply = async (draft: AppSettings) => {
+    const serverUrl = draft.serverUrl.trim().replace(/\/+$/, '')
+    if (!URL.canParse(serverUrl) || !['http:', 'https:'].includes(new URL(serverUrl).protocol)) {
+      setInvalidAddress(true)
+      return
     }
-    setSaved(true)
+    const value = { mode: draft.mode, serverUrl }
+    const latest = pending.current ?? applied.current
+    if (latest.mode === value.mode && latest.serverUrl === serverUrl) return
+    pending.current = value
     setSaveError(null)
-    if (onSaved !== undefined) {
-      onSaved()
+    try {
+      const bridge = window.vibesolver
+      if (bridge) {
+        const result = await bridge.saveConfig({ ...value, lang })
+        if (!result.ok) throw new Error(result.error || t('settings.saveFailed'))
+      } else {
+        saveSettings(value)
+      }
+      if (pending.current !== value) return
+      applied.current = value
+      onConnectionChange?.(value)
+    } catch (error) {
+      if (pending.current === value) setSaveError(getErrorMessage(error))
+    } finally {
+      if (pending.current === value) pending.current = null
+    }
+  }
+
+  const selectMode = (mode: AppSettings['mode']) => {
+    const next = { mode, serverUrl: mode === 'local' ? getLocalServerUrl() : remoteAddress.current }
+    edit(next)
+    if (next.serverUrl) void apply(next)
+  }
+
+  const changeLanguage = async (next: Lang) => {
+    const id = ++languageChange.current
+    setLang(next)
+    const bridge = window.vibesolver
+    if (!bridge) return
+    try {
+      const result = await bridge.setLanguage(next)
+      if (!result.ok) throw new Error(result.error || t('settings.saveFailed'))
+    } catch (error) {
+      if (id === languageChange.current) {
+        setLang(lang)
+        setSaveError(getErrorMessage(error))
+      }
     }
   }
 
@@ -88,7 +124,7 @@ export default function SettingsPage({ onSaved, theme = 'light', onThemeChange, 
   return (
     <div className="settings-page">
       <div className="settings-heading"><div><span className="eyebrow">{t('app.preferences')}</span><h1>{t('common.settings')}</h1></div><p>{t('settings.description')}</p></div>
-      <form onSubmit={submit}>
+      <div className="settings-grid">
         <section className="settings-section">
           <div className="settings-section-heading"><div><h2>{t('settings.appearance')}</h2><p>{t('settings.appearanceHint')}</p></div></div>
           <div className="theme-options">
@@ -108,7 +144,7 @@ export default function SettingsPage({ onSaved, theme = 'light', onThemeChange, 
             type="radio"
             name="mode"
             checked={settings.mode === 'local'}
-            onChange={() => update({ mode: 'local' })}
+            onChange={() => selectMode('local')}
           />
           {t('common.local')}
         </label>
@@ -117,7 +153,7 @@ export default function SettingsPage({ onSaved, theme = 'light', onThemeChange, 
             type="radio"
             name="mode"
             checked={settings.mode === 'remote'}
-            onChange={() => update({ mode: 'remote' })}
+            onChange={() => selectMode('remote')}
           />
           {t('common.remote')}
         </label>
@@ -126,10 +162,17 @@ export default function SettingsPage({ onSaved, theme = 'light', onThemeChange, 
           <input
             type="text"
             value={settings.serverUrl}
-            onChange={(event) => update({ serverUrl: event.target.value })}
-            placeholder="http://localhost:8000"
+            readOnly={settings.mode === 'local'}
+            aria-invalid={invalidAddress}
+            onChange={event => {
+              remoteAddress.current = event.target.value
+              edit({ ...settings, serverUrl: event.target.value })
+            }}
+            onBlur={() => { if (settings.mode === 'remote') void apply(settings) }}
+            onKeyDown={event => { if (event.key === 'Enter' && settings.mode === 'remote') void apply(settings) }}
           />
         </label>
+        {invalidAddress && <p className="error" role="alert">{t('settings.invalidAddress')}</p>}
         <div>
           <button
             type="button"
@@ -142,7 +185,7 @@ export default function SettingsPage({ onSaved, theme = 'light', onThemeChange, 
             {t('common.checkConnection')}
           </button>
           {checkState === 'ok' && <span className="ok">{t('common.connectionOk')}</span>}
-          {checkState === 'err' && checkError !== null && <span className="error">{checkError}</span>}
+          {checkState === 'err' && <span className="error">{getErrorMessage(checkError, lang)}</span>}
         </div>
         </section>
         <section className="settings-section">
@@ -155,7 +198,7 @@ export default function SettingsPage({ onSaved, theme = 'light', onThemeChange, 
                   name="lang"
                   checked={lang === language}
                   onChange={() => {
-                    setLang(language)
+                    void changeLanguage(language)
                   }}
                 />
                 {t(LANGUAGE_LABEL_KEYS[language])}
@@ -174,14 +217,8 @@ export default function SettingsPage({ onSaved, theme = 'light', onThemeChange, 
             {t('settings.experimentalToggle')}
           </label>
         </section>
-        <div className="settings-actions">
-        <button type="submit" className="btn btn-primary">
-          {t('common.save')}
-        </button>
-        {saved && <span className="ok">{t('settings.saved')}</span>}
-        {saveError !== null && <span className="error">{saveError}</span>}
-        </div>
-      </form>
+        {saveError !== null && <div className="settings-actions error" role="alert">{saveError}</div>}
+      </div>
     </div>
   )
 }

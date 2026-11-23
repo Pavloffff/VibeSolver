@@ -143,10 +143,17 @@ export interface TicketBrief {
 
 export interface TicketCitation {
   source_ref: string
+  label?: string | null
   path: string
   index_type: string
   start_line: number | null
   end_line: number | null
+}
+
+export interface LocalizedTicketResult {
+  en: string
+  ru: string
+  zh: string
 }
 
 export interface Ticket {
@@ -157,6 +164,8 @@ export interface Ticket {
   status: string
   triage: Record<string, unknown> | null
   answer: string | null
+  localized_result?: LocalizedTicketResult | null
+  english_result?: string | null
   escalate_reason: string | null
   citations: TicketCitation[]
   created_at: string | null
@@ -203,7 +212,7 @@ export interface OllamaPullProgress {
 }
 export interface SolverProfileInput {
   name: string
-  enabled: { triage: boolean; resolve: boolean }
+  enabled: { triage: boolean; resolve: boolean; flow?: boolean; logs?: boolean; code?: boolean; ui?: boolean; web?: boolean; review?: boolean }
   models: { ticket_resolution: number | null; ticket_triage: number | null; ticket_resolution_cheap: number | null }
 }
 export interface SolverProfile extends SolverProfileInput { id: number }
@@ -211,7 +220,25 @@ export interface SolverGraph {
   nodes: { id: string; optional: boolean }[]
   edges: { source: string; target: string }[]
   profiles: SolverProfile[]
-  default_profile_id: number
+  default_profile_id: number | null
+}
+export interface DiagnosticTools {
+  allow_web_search: boolean
+  ui_probe: string | null
+  web_provider: string | null
+  available_ui_probes: string[]
+  available_web_providers: string[]
+}
+export interface TicketDiagnosticOptions { use_web_search: boolean }
+export interface UiObservation {
+  role: string
+  name: string
+  width: number
+  height: number
+  visible: boolean
+  enabled: boolean
+  checked: boolean | null
+  observed_at: string
 }
 export interface SolverRun {
   id: number
@@ -223,6 +250,10 @@ export interface SolverRun {
   created_at: string
   finished_at: string | null
   error: string | null
+  rerun_context?: {
+    comment: string | null
+    previous_result: { status: string; answer: string | null; escalate_reason: string | null }
+  } | null
 }
 
 export interface SourceBrowserSnapshot {

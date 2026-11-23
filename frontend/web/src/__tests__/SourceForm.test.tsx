@@ -9,7 +9,10 @@ const connectors = [
     type: 'git',
     ready: true,
     config_schema: {
-      fields: [{ name: 'url', label: 'URL', kind: 'text' as const, required: true }],
+      fields: [
+        { name: 'url', label: 'Repository URL', kind: 'text' as const, required: true },
+        { name: 'token_ref', label: 'Access token (PAT)', kind: 'password' as const, required: false, hint: 'Only for private repositories.' },
+      ],
     },
   },
   {
@@ -50,8 +53,8 @@ beforeEach(() => {
 describe('SourceForm', () => {
   it('marks not-ready connectors as disabled', async () => {
     renderForm()
-    const gitOption = await screen.findByRole('option', { name: 'git' })
-    const svnOption = screen.getByRole('option', { name: /svn/ })
+    const gitOption = await screen.findByRole('option', { name: 'Git' })
+    const svnOption = screen.getByRole('option', { name: /Subversion/ })
     expect(gitOption).toBeEnabled()
     expect(svnOption).toBeDisabled()
   })
@@ -60,7 +63,10 @@ describe('SourceForm', () => {
     renderForm()
     const select = await screen.findByRole('combobox')
     fireEvent.change(select, { target: { value: 'git' } })
-    expect(await screen.findByLabelText('URL *', {}, { timeout: 8000 })).toBeInTheDocument()
+    expect(await screen.findByLabelText('URL репозитория *', {}, { timeout: 8000 })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Токен доступа/)).toBeInTheDocument()
+    expect(screen.getByText(/Только для закрытых репозиториев/)).toBeInTheDocument()
+    expect(screen.queryByText('Only for private repositories.')).not.toBeInTheDocument()
   })
 
   it('shows required-field error in the current language', async () => {
@@ -69,7 +75,7 @@ describe('SourceForm', () => {
     fireEvent.change(select, { target: { value: 'git' } })
     fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'repo' } })
     fireEvent.click(screen.getByRole('button', { name: 'Создать' }))
-    expect(await screen.findByText('Заполните поле «URL»', {}, { timeout: 8000 })).toBeInTheDocument()
+    expect(await screen.findByText('Заполните поле «URL репозитория»', {}, { timeout: 8000 })).toBeInTheDocument()
   }, 20000)
 
   it('uploads an archive and creates the source with its upload key', async () => {
@@ -93,6 +99,7 @@ describe('SourceForm', () => {
     const file = new File(['source'], 'project.zip', { type: 'application/zip' })
     fireEvent.change(await screen.findByLabelText(/Архив проекта/), { target: { files: [file] } })
     await waitFor(() => expect(api.uploadArchive).toHaveBeenCalledWith(file))
+    expect(await screen.findByText('project.zip')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Создать' }))
     await waitFor(() =>
       expect(api.createSource).toHaveBeenCalledWith('archive', 'Проект', {
@@ -116,7 +123,7 @@ describe('SourceForm', () => {
     )
     fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'git' } })
     fireEvent.change(await screen.findByLabelText('Название'), { target: { value: 'repo' } })
-    fireEvent.change(await screen.findByLabelText('URL *'), { target: { value: 'https://github.com/acme/repo.git' } })
+    fireEvent.change(await screen.findByLabelText('URL репозитория *'), { target: { value: 'https://github.com/acme/repo.git' } })
     fireEvent.click(screen.getByRole('button', { name: 'Создать' }))
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith({ id: 9 }, 'queue unavailable'))

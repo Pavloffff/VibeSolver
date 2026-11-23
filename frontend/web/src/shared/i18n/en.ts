@@ -1,7 +1,22 @@
+import { catalogEN } from './catalog.en'
+import { apiErrorsEN } from './apiErrors.en'
+import { issueWorkspaceEN } from './issueWorkspace.en'
+import { issuesDiagnosticEn } from './issuesDiagnostic.en'
 import { solverGraphEN } from './solverGraph.en'
 import { sourceBrowserEn } from './sourceBrowser.en'
 
 export const en = {
+  ...catalogEN,
+  'errors.connectionFailed': 'Cannot reach the server. Check the server address and network connection.',
+  'errors.fieldRequired': '{field} is required.',
+  'errors.fieldInvalid': 'Check the value of {field}.',
+  'errors.fieldMaxLength': '{field} must contain at most {limit} characters.',
+  'errors.fieldMinLength': '{field} must contain at least {limit} characters.',
+  'errors.request': 'Request',
+  'settings.invalidAddress': 'Enter a full server address starting with http:// or https://.',
+  ...apiErrorsEN,
+  ...issueWorkspaceEN,
+  ...issuesDiagnosticEn,
   ...sourceBrowserEn,
   'project.navigation': 'Project navigation',
   'project.overview': 'Overview',
@@ -333,7 +348,11 @@ export const en = {
   'settings.saved': 'Settings saved',
   'settings.saveFailed': 'Failed to save settings',
   'settings.experimental': 'Experimental features',
-  'settings.experimentalHint': 'Features still in development. Right now: generating documentation from code and User Flow from documentation.',
+  'settings.experimentalHint': 'Includes material generation and attaching a browser observation to a project issue.',
+  'experimental.observationTicket': 'Issue for this observation',
+  'experimental.pickTicket': 'Choose an issue',
+  'experimental.emptyTickets': 'Create an issue in this project to attach an observation.',
+  'experimental.loadingTickets': 'Loading issues…',
   'settings.experimentalToggle': 'Show experimental features',
   'errors.serverUnavailable': 'Server unavailable: {message}',
   'errors.httpError': 'Error {status}: {body}',
@@ -343,4 +362,6 @@ export const en = {
   'errors.enterName': 'Enter a name',
   'errors.fillField': 'Fill in the "{field}" field',
   'errors.rootElementMissing': '#root element not found',
+  'filePicker.chooseFile': 'Choose file',
+  'filePicker.chooseFiles': 'Choose files',
 }

@@ -3,6 +3,7 @@ import { getApiClient, getErrorMessage } from '../../../shared/api/client'
 import type { AvailableModel, ModelProvider, ModelProviderType, OllamaPullProgress, WorkspaceModel } from '../../../shared/api/types'
 import { useT } from '../../../shared/i18n'
 import type { TranslationKey } from '../../../shared/i18n'
+import { modelCapabilityLabel, modelPullStatusLabel, modelStatusLabel, providerCatalogLabel } from '../../../shared/i18n/catalogLabels'
 
 const PROVIDER_HINT_KEYS: Record<string, TranslationKey> = {
   freetoken: 'models.freetokenHint',
@@ -19,8 +20,17 @@ interface ProviderFormState {
   apiKey: string
 }
 
+type ProviderField = 'name' | 'baseUrl' | 'apiKey'
+
+interface ProviderEdit {
+  saved: ModelProvider
+  pending: Promise<void>
+  scheduled: Map<ProviderField, { value: string }>
+  errors: Map<ProviderField, string>
+}
+
 export default function ModelsPage() {
-  const { t } = useT()
+  const { lang, t } = useT()
   const api = getApiClient()
   const [providerTypes, setProviderTypes] = useState<ModelProviderType[]>([])
   const [providers, setProviders] = useState<ModelProvider[]>([])
@@ -38,6 +48,7 @@ export default function ModelsPage() {
   const [pullTag, setPullTag] = useState('')
   const [pullProgress, setPullProgress] = useState<OllamaPullProgress | null>(null)
   const abortController = useRef<AbortController | null>(null)
+  const activeEdit = useRef<ProviderEdit | null>(null)
 
   const refresh = useCallback(async () => {
     const [catalog, connections, listedModels] = await Promise.all([
@@ -76,56 +87,141 @@ export default function ModelsPage() {
   const openCreate = () => {
     const type = providerTypes[0]
     if (type === undefined) return
+    activeEdit.current = null
+    setError(null)
     setEditingProvider(null)
     setForm({ providerType: type.provider_type, name: type.display_name, baseUrl: type.default_url, apiKey: '' })
   }
 
   const openEdit = (provider: ModelProvider) => {
+    activeEdit.current = { saved: provider, pending: Promise.resolve(), scheduled: new Map(), errors: new Map() }
+    setError(null)
     setEditingProvider(provider)
     setForm({ providerType: provider.provider_type, name: provider.name, baseUrl: provider.base_url, apiKey: '' })
   }
 
-  const saveProvider = async (event: React.FormEvent) => {
+  const closeProviderForm = () => {
+    activeEdit.current = null
+    setForm(null)
+    setEditingProvider(null)
+  }
+
+  const finishProviderEdit = async (discardInvalid = false) => {
+    const edit = activeEdit.current
+    if (edit === null) {
+      closeProviderForm()
+      return
+    }
+    await edit.pending
+    if (activeEdit.current === edit && (discardInvalid || edit.errors.size === 0)) closeProviderForm()
+  }
+
+  const createProvider = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (form === null) return
-    setBusy('provider-save')
-    setError(null)
-    try {
-      const payload = {
+    if (form === null || editingProvider !== null) return
+    if (!form.name.trim()) {
+      setError(t('catalog.providerNameRequired'))
+      return
+    }
+    await run('provider-save', async () => {
+      const createdProvider = await api.createModelProvider({
         provider_type: form.providerType,
-        name: form.name,
-        base_url: form.baseUrl,
-        ...(form.apiKey ? { api_key: form.apiKey } : {}),
-      }
-      let createdProvider: ModelProvider | null = null
-      if (editingProvider === null) createdProvider = await api.createModelProvider(payload)
-      else await api.updateModelProvider(editingProvider.id, { name: form.name, base_url: form.baseUrl, ...(form.apiKey ? { api_key: form.apiKey } : {}) })
+        name: form.name.trim(),
+        base_url: form.baseUrl.trim(),
+        ...(form.apiKey.trim() ? { api_key: form.apiKey.trim() } : {}),
+      })
+      closeProviderForm()
+      setProviders(previous => [...previous, createdProvider])
+      setNotice(t('models.providerAdded'))
       await refresh()
-      const createdDefinition = createdProvider !== null ? providerTypes.find((item) => item.provider_type === createdProvider.provider_type) : undefined
-      if (createdProvider !== null && createdDefinition !== undefined && !createdDefinition.sync_all_models) {
+      const definition = providerTypes.find((item) => item.provider_type === createdProvider.provider_type)
+      if (definition && !definition.sync_all_models) {
         setAvailableModels(await api.listAvailableModels(createdProvider.id))
         setSearch('')
         setBrowseProvider(createdProvider)
       }
-      setForm(null)
-      setEditingProvider(null)
-      setNotice(t(editingProvider === null ? 'models.providerAdded' : 'models.providerUpdated'))
-    } catch (saveError) {
-      setError(getErrorMessage(saveError))
-    } finally {
-      setBusy(null)
+    })
+  }
+
+  const applyProviderField = (field: ProviderField, raw: string): void => {
+    const edit = activeEdit.current
+    if (edit === null) return
+    const value = raw.trim()
+    if (field === 'apiKey' && !value) {
+      edit.errors.delete(field)
+      setError([...edit.errors.values()][0] ?? null)
+      return
+    }
+    const problem = field === 'name' && !value
+      ? t('catalog.providerNameRequired')
+      : field === 'baseUrl' && !validProviderAddress(value) ? t('catalog.providerInvalidAddress') : null
+    if (problem !== null) {
+      edit.errors.set(field, problem)
+      setError(problem)
+      return
+    }
+    if (edit.scheduled.get(field)?.value === value) return
+    const change = { value }
+    edit.scheduled.set(field, change)
+    edit.pending = edit.pending.then(async () => {
+      try {
+        const { saved } = edit
+        if ((field === 'name' && value === saved.name) || (field === 'baseUrl' && value === saved.base_url)) {
+          edit.errors.delete(field)
+          return
+        }
+        const updated = await api.updateModelProvider(saved.id, {
+          name: field === 'name' ? value : saved.name,
+          ...(field === 'baseUrl' ? { base_url: value } : {}),
+          ...(field === 'apiKey' ? { api_key: value } : {}),
+        })
+        edit.saved = updated
+        edit.errors.delete(field)
+        setProviders(previous => previous.map(provider => provider.id === updated.id ? updated : provider))
+        setModels(previous => previous.map(model => model.provider_connection_id === updated.id
+          ? { ...model, provider_name: updated.name }
+          : model))
+        if (activeEdit.current === edit) {
+          setForm(current => current && current[field].trim() === value ? {
+            ...current,
+            [field]: field === 'name' ? updated.name : field === 'baseUrl' ? updated.base_url : '',
+          } : current)
+        }
+        setNotice(t('models.providerUpdated'))
+      } catch (updateError) {
+        edit.errors.set(field, getErrorMessage(updateError))
+      } finally {
+        if (edit.scheduled.get(field) === change) edit.scheduled.delete(field)
+        if (activeEdit.current === edit || activeEdit.current === null) {
+          setError([...edit.errors.values()][0] ?? null)
+        }
+      }
+    })
+  }
+
+  const blurOnEnter = (event: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (editingProvider !== null && event.key === 'Enter') {
+      event.preventDefault()
+      event.currentTarget.blur()
     }
   }
 
   const testProviderForm = async () => {
     if (form === null) return
+    const edit = activeEdit.current
+    if (edit !== null) {
+      await edit.pending
+      if (activeEdit.current !== edit || edit.errors.size > 0) return
+    }
     await run('provider-test', async () => {
-      const result = await api.testModelProvider({
-        provider_type: form.providerType,
-        name: form.name,
-        base_url: form.baseUrl,
-        ...(form.apiKey ? { api_key: form.apiKey } : {}),
-      })
+      const result = edit !== null
+        ? await api.testSavedModelProvider(edit.saved.id)
+        : await api.testModelProvider({
+          provider_type: form.providerType,
+          name: form.name,
+          base_url: form.baseUrl,
+          ...(form.apiKey ? { api_key: form.apiKey } : {}),
+        })
       setNotice(t('models.connectionTestOk', { count: String(result.available_models) }))
     })
   }
@@ -224,9 +320,9 @@ export default function ModelsPage() {
     <div className="workspace-model-list">
       {entries.map((model) => (
         <div className="workspace-model-row" key={model.id}>
-          <div className="workspace-model-icon">{model.capabilities.includes('embedding') ? 'EMB' : 'AI'}</div>
-          <div className="workspace-model-info"><strong>{model.display_name}</strong><span>{model.provider_name} · {model.provider_model_id}</span><div className="workspace-model-badges">{model.capabilities.map((capability) => <span className="badge" key={capability}>{capability === 'embedding' ? t('models.capabilityEmbedding') : capability === 'chat' ? t('models.capabilityChat') : capability}</span>)}<span className="badge">{t(model.status === 'installed' ? 'models.statusInstalled' : model.status === 'available' ? 'models.statusRemote' : model.status === 'pulling' ? 'models.statusPulling' : model.status === 'error' ? 'models.statusError' : 'models.statusCancelled')}</span></div></div>
-          {typeof model.metadata.size_bytes === 'number' && <span className="model-size">{formatBytes(model.metadata.size_bytes)}</span>}
+          <div className="workspace-model-icon" aria-hidden="true">{t(model.capabilities.includes('embedding') ? 'catalog.modelIconEmbedding' : 'catalog.modelIconGeneration')}</div>
+          <div className="workspace-model-info"><strong>{model.display_name}</strong><span>{model.provider_name} · {model.provider_model_id}</span><div className="workspace-model-badges">{model.capabilities.map((capability) => <span className="badge" key={capability}>{modelCapabilityLabel(t, capability)}</span>)}<span className="badge">{modelStatusLabel(t, model.status)}</span></div></div>
+          {typeof model.metadata.size_bytes === 'number' && <span className="model-size">{formatBytes(model.metadata.size_bytes, lang)}</span>}
           <button type="button" className="btn models-delete-button" disabled={busy !== null} onClick={() => deleteModel(model)}>{t('sources.delete')}</button>
         </div>
       ))}
@@ -241,7 +337,7 @@ export default function ModelsPage() {
         <div><span className="eyebrow">{t('app.workspace')}</span><h1>{t('models.title')}</h1><p>{t('models.description')}</p></div>
         <button type="button" className="btn btn-primary" onClick={openCreate}>+ {t('models.addProvider')}</button>
       </header>
-      {error !== null && <div className="error page-alert" role="alert">{error}</div>}
+      {error !== null && form === null && <div className="error page-alert" role="alert">{error}</div>}
       {notice !== null && <div className="success-note models-notice" role="status">{notice}</div>}
 
       <section className="models-section">
@@ -253,7 +349,7 @@ export default function ModelsPage() {
           return (
             <article className="provider-card" key={provider.id}>
               <div className="provider-card-heading">
-                <div><h3>{provider.name}</h3><span className="provider-endpoint">{provider.base_url}</span><div className="provider-card-meta"><span className="badge">{definition?.display_name ?? provider.provider_type}</span><span>{t(provider.has_api_key ? 'models.keyConfigured' : 'models.noKeyNeeded')}</span><span>{t('models.modelCount', { count: String(providerModels.length) })}</span></div></div>
+                <div><h3>{provider.name}</h3><span className="provider-endpoint">{provider.base_url}</span><div className="provider-card-meta"><span className="badge">{providerCatalogLabel(t, provider.provider_type, definition?.display_name ?? provider.provider_type)}</span><span>{t(provider.has_api_key ? 'models.keyConfigured' : 'models.noKeyNeeded')}</span><span>{t('models.modelCount', { count: String(providerModels.length) })}</span></div></div>
                 <div className="provider-actions">
                   <button type="button" className="btn" disabled={busy !== null} onClick={() => testProvider(provider)}>{busy === `provider-test-${provider.id}` ? t('models.checking') : t('models.testConnection')}</button>
                   {definition?.sync_all_models && <button type="button" className="btn" disabled={busy !== null} onClick={() => syncProvider(provider)}>{busy === `provider-sync-${provider.id}` ? t('models.syncing') : t('models.refreshModels')}</button>}
@@ -265,7 +361,7 @@ export default function ModelsPage() {
               </div>
               {definition?.supports_model_pull && isPulling && pullProgress !== null && (
                 <div className="models-pull-progress">
-                  <div className="models-progress-line"><span>{pullProgress.status}</span>{pullProgress.progress !== null && pullProgress.progress !== undefined && <span>{pullProgress.progress}%</span>}</div>
+                  <div className="models-progress-line"><span>{modelPullStatusLabel(t, pullProgress.status)}</span>{pullProgress.progress !== null && pullProgress.progress !== undefined && <span>{pullProgress.progress}%</span>}</div>
                   <div className="progress-track"><span style={{ width: `${pullProgress.progress ?? 0}%` }} /></div>
                   <button type="button" className="text-button" onClick={cancelPull}>{t('models.cancelPull')}</button>
                 </div>
@@ -289,20 +385,24 @@ export default function ModelsPage() {
 
       {form !== null && (
         <div className="modal-overlay">
-          <form className="modal models-provider-form" role="dialog" aria-modal="true" onSubmit={(event) => void saveProvider(event)}>
-            <div className="modal-heading"><h2>{t(editingProvider === null ? 'models.addProviderTitle' : 'models.editProviderTitle')}</h2><button type="button" className="text-button" onClick={() => setForm(null)} aria-label={t('common.cancel')}>×</button></div>
+          <form className="modal models-provider-form" role="dialog" aria-modal="true" onSubmit={(event) => void createProvider(event)}>
+            <div className="modal-heading"><h2>{t(editingProvider === null ? 'models.addProviderTitle' : 'models.editProviderTitle')}</h2><button type="button" className="text-button" onClick={() => void finishProviderEdit(true)} aria-label={t(editingProvider === null ? 'common.cancel' : 'catalog.providerClose')}>×</button></div>
             <label>{t('models.providerType')}<select value={form.providerType} disabled={editingProvider !== null} onChange={(event) => {
               const type = providerTypes.find((item) => item.provider_type === event.target.value)
               if (type !== undefined) setForm((current) => current === null ? null : { ...current, providerType: type.provider_type, name: type.display_name, baseUrl: type.default_url })
-            }}>{providerTypes.map((type) => <option key={type.provider_type} value={type.provider_type}>{type.display_name}</option>)}</select></label>
-            <label>{t('models.connectionName')}<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
-            <label>{t('models.apiAddress')}<input required={!providerType?.fixed_url} readOnly={providerType?.fixed_url ?? false} value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} /></label>
+            }}>{providerTypes.map((type) => <option key={type.provider_type} value={type.provider_type}>{providerCatalogLabel(t, type.provider_type, type.display_name)}</option>)}</select></label>
+            <label>{t('models.connectionName')}<input required value={form.name} onKeyDown={blurOnEnter} onBlur={(event) => applyProviderField('name', event.currentTarget.value)} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
+            <label>{t('models.apiAddress')}<input required={!providerType?.fixed_url} readOnly={providerType?.fixed_url ?? false} value={form.baseUrl} onKeyDown={blurOnEnter} onBlur={(event) => applyProviderField('baseUrl', event.currentTarget.value)} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} /></label>
             {providerHintKey !== undefined && (
               <small className="models-form-hint">{t(providerHintKey)}</small>
             )}
-            <label>{t('models.apiKey')}{providerType?.requires_api_key ? ' *' : ''}<input type="password" autoComplete="new-password" required={providerType?.requires_api_key === true && editingProvider === null} value={form.apiKey} placeholder={editingProvider !== null && editingProvider.has_api_key ? t('models.keyPreserved') : ''} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} /></label>
+            <label>{t('models.apiKey')}{providerType?.requires_api_key ? ' *' : ''}<input type="password" autoComplete="new-password" required={providerType?.requires_api_key === true && editingProvider === null} value={form.apiKey} onKeyDown={blurOnEnter} onBlur={(event) => applyProviderField('apiKey', event.currentTarget.value)} placeholder={editingProvider !== null && editingProvider.has_api_key ? t('models.keyPreserved') : ''} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} /></label>
             {error !== null && <p className="error" role="alert">{error}</p>}
-            <div className="modal-actions"><button type="button" className="btn" onClick={() => setForm(null)}>{t('common.cancel')}</button><button type="button" className="btn" disabled={busy !== null} onClick={() => void testProviderForm()}>{busy === 'provider-test' ? t('models.checking') : t('models.testConnection')}</button><button type="submit" className="btn btn-primary" disabled={busy !== null}>{busy === 'provider-save' ? t('project.uploading') : t('common.save')}</button></div>
+            <div className="modal-actions">
+              <button type="button" className="btn" onClick={() => void finishProviderEdit()}>{t(editingProvider === null ? 'common.cancel' : 'catalog.providerDone')}</button>
+              <button type="button" className="btn" disabled={busy !== null} onClick={() => void testProviderForm()}>{busy === 'provider-test' ? t('models.checking') : t('models.testConnection')}</button>
+              {editingProvider === null && <button type="submit" className="btn btn-primary" disabled={busy !== null}>{busy === 'provider-save' ? t('project.uploading') : t('catalog.providerAddConnection')}</button>}
+            </div>
           </form>
         </div>
       )}
@@ -315,7 +415,7 @@ export default function ModelsPage() {
             <div className="available-model-list">{visibleAvailableModels.map((model) => {
               const added = models.some((entry) => entry.provider_connection_id === browseProvider.id && entry.provider_model_id === model.provider_model_id)
               const key = `model-add-${browseProvider.id}-${model.provider_model_id}`
-              return <div className="available-model-row" key={model.provider_model_id}><div><strong>{model.display_name}</strong><span>{model.provider_model_id}</span><div className="workspace-model-badges">{model.capabilities.map((capability) => <span className="badge" key={capability}>{t(capability === 'embedding' ? 'models.capabilityEmbedding' : 'models.capabilityChat')}</span>)}{typeof model.metadata.context_length === 'number' && <span className="badge">{t('models.contextTokens', { count: String(model.metadata.context_length) })}</span>}</div></div><button type="button" className="btn" disabled={added || busy !== null} onClick={() => addModel(browseProvider, model)}>{busy === key ? t('models.adding') : added ? t('models.added') : t('models.addModel')}</button></div>
+              return <div className="available-model-row" key={model.provider_model_id}><div><strong>{model.display_name}</strong><span>{model.provider_model_id}</span><div className="workspace-model-badges">{model.capabilities.map((capability) => <span className="badge" key={capability}>{modelCapabilityLabel(t, capability)}</span>)}{typeof model.metadata.context_length === 'number' && <span className="badge">{t('models.contextTokens', { count: String(model.metadata.context_length) })}</span>}</div></div><button type="button" className="btn" disabled={added || busy !== null} onClick={() => addModel(browseProvider, model)}>{busy === key ? t('models.adding') : added ? t('models.added') : t('models.addModel')}</button></div>
             })}{visibleAvailableModels.length === 0 && <p className="models-empty">{t('models.noCatalogResults')}</p>}</div>
           </section>
         </div>
@@ -326,7 +426,7 @@ export default function ModelsPage() {
           <form className="modal models-provider-form" role="dialog" aria-modal="true" onSubmit={(event) => void pullModel(event)}>
             <div className="modal-heading"><div><h2>{t('models.pullTitle')}</h2><p>{t('models.pullHint')}</p></div><button type="button" className="text-button" onClick={() => setPullProvider(null)} aria-label={t('common.cancel')}>×</button></div>
             <label>{t('models.modelTag')}<input required value={pullTag} placeholder={t('models.modelTagPlaceholder')} onChange={(event) => setPullTag(event.target.value)} disabled={busy === 'model-pull'} /></label>
-            {pullProgress !== null && <div className="models-pull-progress"><div className="models-progress-line"><span>{pullProgress.status}</span>{pullProgress.progress !== null && pullProgress.progress !== undefined && <span>{pullProgress.progress}%</span>}</div><div className="progress-track"><span style={{ width: `${pullProgress.progress ?? 0}%` }} /></div></div>}
+            {pullProgress !== null && <div className="models-pull-progress"><div className="models-progress-line"><span>{modelPullStatusLabel(t, pullProgress.status)}</span>{pullProgress.progress !== null && pullProgress.progress !== undefined && <span>{pullProgress.progress}%</span>}</div><div className="progress-track"><span style={{ width: `${pullProgress.progress ?? 0}%` }} /></div></div>}
             <div className="modal-actions"><button type="button" className="btn" onClick={() => setPullProvider(null)}>{t('common.cancel')}</button>{busy === 'model-pull' ? <button type="button" className="btn" onClick={cancelPull}>{t('models.cancelPull')}</button> : <button type="submit" className="btn btn-primary">{t('models.pullModel')}</button>}</div>
           </form>
         </div>
@@ -335,13 +435,27 @@ export default function ModelsPage() {
   )
 }
 
-function formatBytes(value: number): string {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+function validProviderAddress(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash
+  } catch {
+    return false
+  }
+}
+
+function formatBytes(value: number, language: string): string {
+  const units = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte']
   let size = value
   let unit = 0
   while (size >= 1024 && unit < units.length - 1) {
     size /= 1024
     unit += 1
   }
-  return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
+  return new Intl.NumberFormat(language, {
+    style: 'unit',
+    unit: units[unit],
+    unitDisplay: 'short',
+    maximumFractionDigits: unit === 0 ? 0 : 1,
+  }).format(size)
 }

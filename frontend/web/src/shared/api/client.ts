@@ -1,11 +1,16 @@
 import { getApiBaseUrl } from '../config'
-import { t } from '../i18n'
+import { t, type Lang } from '../i18n'
+import { responseErrorMessage } from './responseErrors'
 import { getLang } from '../state/settings'
 import type { SourceBrowserFile, SourceBrowserSnapshot, SourceBrowserTree } from './types'
 import type {
   AvailableModel,
+  DiagnosticTools,
+  TicketDiagnosticOptions,
+  UiObservation,
   ConnectorInfo,
   ImportStatus,
+  LocalizedTicketResult,
   ProjectIndexStatus,
   ProjectIndexType,
   ModelProvider,
@@ -27,15 +32,28 @@ import type {
 
 export class ApiError extends Error {
   readonly status: number
+  readonly localized?: (lang: Lang) => string
 
-  constructor(status: number, message: string) {
-    super(message)
+  constructor(status: number, message: string | ((lang: Lang) => string)) {
+    super(typeof message === 'string' ? message : message(getLang()))
     this.name = 'ApiError'
     this.status = status
+    if (typeof message === 'function') this.localized = message
   }
 }
 
-export function getErrorMessage(error: unknown): string {
+function httpError(status: number, body: string): ApiError {
+  return new ApiError(status, lang => responseErrorMessage(lang, status, body))
+}
+
+function networkError(error: unknown): ApiError {
+  return new ApiError(0, lang => error instanceof TypeError
+    ? t(lang, 'errors.connectionFailed')
+    : t(lang, 'errors.serverUnavailable', { message: getErrorMessage(error) }))
+}
+
+export function getErrorMessage(error: unknown, lang = getLang()): string {
+  if (error instanceof ApiError && error.localized) return error.localized(lang)
   if (error instanceof Error) {
     return error.message
   }
@@ -57,14 +75,11 @@ export class ApiClient {
         ...init,
       })
     } catch (error) {
-      throw new ApiError(0, t(getLang(), 'errors.serverUnavailable', { message: getErrorMessage(error) }))
+      throw networkError(error)
     }
     if (!response.ok) {
       const body = await response.text()
-      throw new ApiError(
-        response.status,
-        t(getLang(), 'errors.httpError', { status: String(response.status), body }),
-      )
+      throw httpError(response.status, body)
     }
     const body = await response.text()
     if (!body) {
@@ -73,7 +88,7 @@ export class ApiClient {
     try {
       return JSON.parse(body) as T
     } catch {
-      throw new ApiError(response.status, t(getLang(), 'errors.invalidResponse'))
+      throw new ApiError(response.status, lang => t(lang, 'errors.invalidResponse'))
     }
   }
 
@@ -271,13 +286,13 @@ export class ApiClient {
       })
     } catch (error) {
       if (signal.aborted) return
-      throw new ApiError(0, t(getLang(), 'errors.serverUnavailable', { message: getErrorMessage(error) }))
+      throw networkError(error)
     }
     if (!response.ok) {
       const body = await response.text()
-      throw new ApiError(response.status, t(getLang(), 'errors.httpError', { status: String(response.status), body }))
+      throw httpError(response.status, body)
     }
-    if (response.body === null) throw new ApiError(response.status, t(getLang(), 'errors.invalidResponse'))
+    if (response.body === null) throw new ApiError(response.status, lang => t(lang, 'errors.invalidResponse'))
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
@@ -310,6 +325,34 @@ export class ApiClient {
     return this.request(`/api/v1/sources/${sourceId}/solver-graph`)
   }
 
+  getDiagnosticTools(sourceId: number): Promise<DiagnosticTools> {
+    return this.request(`/api/v1/sources/${sourceId}/diagnostic-tools`)
+  }
+
+  setDiagnosticTools(sourceId: number, input: Pick<DiagnosticTools, 'ui_probe' | 'web_provider' | 'allow_web_search'>): Promise<DiagnosticTools> {
+    return this.request(`/api/v1/sources/${sourceId}/diagnostic-tools`, { method: 'PUT', body: JSON.stringify(input) })
+  }
+
+  getTicketDiagnosticOptions(ticketId: number): Promise<TicketDiagnosticOptions> {
+    return this.request(`/api/v1/tickets/${ticketId}/diagnostic-options`)
+  }
+
+  setTicketDiagnosticOptions(ticketId: number, input: TicketDiagnosticOptions): Promise<TicketDiagnosticOptions> {
+    return this.request(`/api/v1/tickets/${ticketId}/diagnostic-options`, { method: 'PUT', body: JSON.stringify(input) })
+  }
+
+  getUiObservation(ticketId: number): Promise<{ observation: UiObservation | null }> {
+    return this.request(`/api/v1/tickets/${ticketId}/ui-observation`)
+  }
+
+  setUiObservation(ticketId: number, input: UiObservation): Promise<{ observation: UiObservation }> {
+    return this.request(`/api/v1/tickets/${ticketId}/ui-observation`, { method: 'PUT', body: JSON.stringify(input) })
+  }
+
+  deleteUiObservation(ticketId: number): Promise<void> {
+    return this.request(`/api/v1/tickets/${ticketId}/ui-observation`, { method: 'DELETE' })
+  }
+
   createSolverProfile(sourceId: number, input: SolverProfileInput): Promise<SolverProfile> {
     return this.request(`/api/v1/sources/${sourceId}/solver-profiles`, { method: 'POST', body: JSON.stringify(input) })
   }
@@ -318,14 +361,10 @@ export class ApiClient {
     return this.request(`/api/v1/sources/${sourceId}/solver-profiles/${profileId}`, { method: 'PUT', body: JSON.stringify(input) })
   }
 
-  deleteSolverProfile(sourceId: number, profileId: number, replacementId?: number): Promise<void> {
-    const query = replacementId === undefined ? '' : `?replacement_id=${replacementId}`
-    return this.request(`/api/v1/sources/${sourceId}/solver-profiles/${profileId}${query}`, { method: 'DELETE' })
+  deleteSolverProfile(sourceId: number, profileId: number): Promise<void> {
+    return this.request(`/api/v1/sources/${sourceId}/solver-profiles/${profileId}`, { method: 'DELETE' })
   }
 
-  setDefaultSolverProfile(sourceId: number, profileId: number): Promise<void> {
-    return this.request(`/api/v1/sources/${sourceId}/solver-profiles/${profileId}/default`, { method: 'PUT' })
-  }
   createTicket(sourceId: number, title: string, description: string): Promise<TicketBrief> {
     return this.request<TicketBrief>(`/api/v1/sources/${sourceId}/tickets`, {
       method: 'POST', body: JSON.stringify({ title, description }),
@@ -340,8 +379,20 @@ export class ApiClient {
     return this.request<TicketStats>(`/api/v1/sources/${sourceId}/tickets/stats`)
   }
 
+  previewTicketArchive(file: File): Promise<{ text: string }> {
+    return this.request('/api/v1/tickets/archive-preview', {
+      method: 'POST',
+      body: file,
+      headers: { 'Content-Type': 'application/zip' },
+    })
+  }
+
   getTicket(ticketId: number): Promise<TicketDetail> {
     return this.request<TicketDetail>(`/api/v1/tickets/${ticketId}`)
+  }
+
+  localizeTicketResult(ticketId: number): Promise<{ localized_result: LocalizedTicketResult | null; english_result?: string | null }> {
+    return this.request(`/api/v1/tickets/${ticketId}/localize`, { method: 'POST' })
   }
 
   listTicketLogAttachments(ticketId: number): Promise<TicketLogAttachment[]> {
@@ -372,9 +423,9 @@ export class ApiClient {
     )
   }
 
-  runTicket(ticketId: number, profileId?: number): Promise<TicketDetail> {
+  runTicket(ticketId: number, profileId: number, comment?: string): Promise<TicketDetail> {
     return this.request<TicketDetail>(`/api/v1/tickets/${ticketId}/run`, {
-      method: 'POST', body: JSON.stringify(profileId === undefined ? {} : { profile_id: profileId }),
+      method: 'POST', body: JSON.stringify({ profile_id: profileId, comment }),
     })
   }
 

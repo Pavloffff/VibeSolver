@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react'
 import { ApiClient, getErrorMessage } from '../../../shared/api/client'
-import { DEFAULT_SERVER_URL } from '../../../shared/config'
+import { getLocalServerUrl } from '../../../shared/config'
 import { useT } from '../../../shared/i18n'
 import { saveSettings } from '../../../shared/state/settings'
 import type { AppMode, AppSettings } from '../../../shared/state/settings'
@@ -18,7 +18,7 @@ interface Props {
 export default function ModeScreen({ onDone }: Props) {
   const { t } = useT()
   const [mode, setMode] = useState<AppMode>('local')
-  const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER_URL)
+  const [serverUrl, setServerUrl] = useState(getLocalServerUrl)
   const [checkState, setCheckState] = useState<CheckState>('idle')
   const [checkError, setCheckError] = useState<string | null>(null)
 
@@ -37,7 +37,7 @@ export default function ModeScreen({ onDone }: Props) {
   const start = () => {
     const settings: AppSettings = {
       mode,
-      serverUrl: mode === 'local' ? DEFAULT_SERVER_URL : serverUrl.trim(),
+      serverUrl: mode === 'local' ? getLocalServerUrl() : serverUrl.trim(),
     }
     saveSettings(settings)
     onDone(settings)

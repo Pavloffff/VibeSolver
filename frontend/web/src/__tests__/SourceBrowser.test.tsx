@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 import { SourceBrowser } from '../pages/project-page/ui/SourceBrowser'
 import { t } from '../shared/i18n'
@@ -15,10 +15,29 @@ it('keeps the selected snapshot and renders imported markup as text', async () =
     }),
   }
   render(<SourceBrowser sourceId={1} api={api} t={(key) => t('en', key)} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Browse source code' }))
   fireEvent.click(await screen.findByRole('button', { name: 'index.html' }))
-  expect(await screen.findByText('<b>not HTML</b>')).toBeInTheDocument()
+  const reader = await screen.findByLabelText('index.html')
+  await waitFor(() => expect(reader.querySelector('.hljs-tag')).not.toBeNull())
+  expect(reader).toHaveTextContent('<b>not HTML</b>')
+  expect(reader.querySelector('b')).toBeNull()
   expect(api.getSourceBrowserFile).toHaveBeenCalledWith(1, 12, 'main', 'index.html', expect.any(AbortSignal))
+})
+
+it('refreshes an older project that requires a new import before browsing', async () => {
+  const api = {
+    getSourceBrowserSnapshot: vi.fn()
+      .mockResolvedValueOnce({ status: 'reimport_required', snapshot_id: null, branches: [] })
+      .mockResolvedValueOnce({ status: 'ready', snapshot_id: 13, branches: ['main'] }),
+    getSourceBrowserTree: vi.fn().mockResolvedValue({ entries: [], next_cursor: null }),
+    getSourceBrowserFile: vi.fn(),
+  }
+  render(<SourceBrowser sourceId={1} api={api} t={(key) => t('en', key)} />)
+  expect(await screen.findByText('Import the project again to create a browsable snapshot.')).toBeInTheDocument()
+  expect(api.getSourceBrowserTree).not.toHaveBeenCalled()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh snapshot' }))
+  expect(await screen.findByText('Snapshot #13')).toBeInTheDocument()
+  await waitFor(() => expect(api.getSourceBrowserTree).toHaveBeenCalledWith(1, 13, 'main', '', null, expect.any(AbortSignal)))
 })
 
 it('keeps the folder cursor with its branch and clears the preview on branch change', async () => {
@@ -42,7 +61,6 @@ it('keeps the folder cursor with its branch and clears the preview on branch cha
     }),
   }
   render(<SourceBrowser sourceId={1} api={api} t={(key) => t('en', key)} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Browse source code' }))
   fireEvent.click(await screen.findByRole('button', { name: 'src' }))
   fireEvent.click(await screen.findByRole('button', { name: 'Load more' }))
   fireEvent.click(await screen.findByRole('button', { name: 'asset.dat' }))

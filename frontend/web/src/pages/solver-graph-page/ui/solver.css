@@ -1,4 +1,4 @@
-.solver-page { max-width: 1160px; margin-inline: auto; color: var(--text); }
+.solver-page { min-width: 0; color: var(--text); }
 .solver-page h1 { margin: 0; font-size: 27px; letter-spacing: -.7px; }
 .solver-page h2 { margin: 0; font-size: 17px; letter-spacing: -.25px; }
 .solver-page p { margin: 6px 0 0; color: var(--text-muted); line-height: 1.55; }
@@ -38,3 +38,8 @@
   .solver-wires { display: none; }
   .solver-inspector { grid-template-columns: 1fr; gap: 16px; }
 }
+.solver-flow { overflow-x: auto; }
+.solver-tools { margin-top: 20px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.solver-tools label { max-width: 420px; margin-top: 12px; }
+.solver-apply-status:not(:empty) { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; font-size: 13px; }
+@media (max-width: 760px) { .solver-map { min-width: 0 !important; min-height: 0 !important; } }

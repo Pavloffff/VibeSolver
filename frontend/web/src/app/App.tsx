@@ -5,6 +5,7 @@ import SourcesPage from '../pages/sources-page'
 import ProjectPage from '../pages/project-page'
 import IssuesPage from '../pages/issues-page'
 import SolverGraphPage from '../pages/solver-graph-page'
+import ExperimentsPage from '../pages/experiments-page/ExperimentsPage'
 import ModelsPage from '../pages/models-page'
 import { getApiBaseUrl } from '../shared/config'
 import { useT } from '../shared/i18n'
@@ -13,7 +14,7 @@ import type { AppSettings, Theme } from '../shared/state/settings'
 import type { Source } from '../shared/api/types'
 
 type Tab = 'sources' | 'models' | 'settings'
-type ProjectSection = 'overview' | 'issues' | 'solver'
+type ProjectSection = 'overview' | 'issues' | 'solver' | 'experiments'
 
 function tabClass(active: boolean): string {
   return active ? 'side-link side-link-active' : 'side-link'
@@ -23,10 +24,10 @@ function isDesktopBridgePresent(): boolean {
   return typeof window !== 'undefined' && window.vibesolver !== undefined
 }
 
-export default function App() {
+export default function App({ desktopConnection }: { desktopConnection?: AppSettings } = {}) {
   const { t } = useT()
   const [settings, setSettings] = useState<AppSettings | null>(() =>
-    isDesktopBridgePresent() ? { mode: 'local', serverUrl: getApiBaseUrl() } : getSettings(),
+    desktopConnection ?? (isDesktopBridgePresent() ? { mode: 'local', serverUrl: getApiBaseUrl() } : getSettings()),
   )
   const [tab, setTab] = useState<Tab>('sources')
   const [theme, setTheme] = useState<Theme>(() => getTheme())
@@ -47,6 +48,7 @@ export default function App() {
 
   const updateExperimental = (nextEnabled: boolean): void => {
     setExperimental(nextEnabled)
+    if (!nextEnabled && projectSection === 'experiments') setProjectSection('overview')
     saveExperimentalEnabled(nextEnabled)
   }
 
@@ -143,20 +145,27 @@ export default function App() {
                 <button type="button" aria-current={projectSection === 'overview' ? 'page' : undefined} onClick={() => setProjectSection('overview')}>{t('project.overview')}</button>
                 <button type="button" aria-current={projectSection === 'issues' ? 'page' : undefined} onClick={() => setProjectSection('issues')}>{t('project.issues')}</button>
                 <button type="button" aria-current={projectSection === 'solver' ? 'page' : undefined} onClick={() => setProjectSection('solver')}>{t('solver.title')}</button>
+                {experimental && <button type="button" aria-current={projectSection === 'experiments' ? 'page' : undefined} onClick={() => setProjectSection('experiments')}>{t('settings.experimental')}</button>}
               </nav>
-              <div hidden={projectSection !== 'overview'}><ProjectPage sourceId={selectedProjectId} launchError={projectLaunchError} experimental={experimental} onNameChange={setSelectedProjectName} onOpenIssues={() => setProjectSection('issues')} onBack={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }} /></div>
+              <div hidden={projectSection !== 'overview'}><ProjectPage sourceId={selectedProjectId} launchError={projectLaunchError} experimental={experimental} onNameChange={setSelectedProjectName} onBack={() => { setSelectedProjectId(null); setSelectedProjectName(null); setProjectSection('overview'); setProjectLaunchError(null) }} /></div>
               <div hidden={projectSection !== 'issues'}><IssuesPage projectId={selectedProjectId} projectName={selectedProjectName ?? t('project.title')} active={projectSection === 'issues'} onOpenSolver={() => setProjectSection('solver')} /></div>
               {projectSection === 'solver' && <SolverGraphPage projectId={selectedProjectId} />}
+              {experimental && projectSection === 'experiments' && <ExperimentsPage projectId={selectedProjectId} />}
             </div>
           )
         ) : (
           <SettingsPage
+            connection={settings}
             theme={theme}
             onThemeChange={updateTheme}
             experimental={experimental}
             onExperimentalChange={updateExperimental}
-            onSaved={() => {
-              setSettings(getSettings())
+            onConnectionChange={connection => {
+              setSettings(connection)
+              setSelectedProjectId(null)
+              setSelectedProjectName(null)
+              setProjectSection('overview')
+              setProjectLaunchError(null)
             }}
           />
         )}

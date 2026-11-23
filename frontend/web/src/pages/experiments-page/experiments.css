@@ -1,0 +1,6 @@
+.experiments-page { min-width: 0; }
+.experiment-card { display: grid; gap: 16px; }
+.experiment-card h2, .experiment-card p { margin: 0; }
+.experiment-card label, .experiment-card .issues-observation { display: grid; gap: 10px; }
+.experiment-card select { width: 100%; max-width: 540px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); }
+.experiment-card .text-button, .experiment-card a { justify-self: start; }

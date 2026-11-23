@@ -7,6 +7,12 @@ const labels: Record<string, [TranslationKey, TranslationKey]> = {
   resolve: ['solver.resolve', 'solver.resolveHint'],
   answer: ['solver.answer', 'solver.answerHint'],
   escalate: ['solver.escalate', 'solver.escalateHint'],
+  flow: ['solver.flowAgent', 'solver.flowAgentHint'],
+  logs: ['solver.logsAgent', 'solver.logsAgentHint'],
+  code: ['solver.codeAgent', 'solver.codeAgentHint'],
+  ui: ['solver.uiAgent', 'solver.uiAgentHint'],
+  web: ['solver.webAgent', 'solver.webAgentHint'],
+  review: ['solver.reviewAgent', 'solver.reviewAgentHint'],
 }
 
 export function useStepLabels() {
@@ -38,19 +44,20 @@ function layout(graph: SolverGraph) {
       y: 100 * (index + 1) / (group.length + 1),
     }))
   }
-  return { positions, width: Math.min(23, 75 / columns) }
+  const maxRows = Math.max(1, ...Array.from({ length: columns }, (_, column) => graph.nodes.filter(node => (depths.get(node.id) ?? 0) === column).length))
+  return { positions, width: Math.min(23, 75 / columns), columns, maxRows }
 }
 
 export default function FlowDiagram({ graph, selected, onSelect, enabled }: {
   graph: SolverGraph
   selected: string
   onSelect: (id: string) => void
-  enabled: Record<string, boolean>
+  enabled: Record<string, boolean | undefined>
 }) {
   const { t } = useT()
   const { label } = useStepLabels()
-  const { positions, width } = layout(graph)
-  return <div className="solver-map" role="group" aria-label={t('solver.flow')}>
+  const { positions, width, columns, maxRows } = layout(graph)
+  return <div className="solver-map" role="group" aria-label={t('solver.flow')} style={{ minWidth: `${columns * 190}px`, minHeight: `${Math.max(235, (maxRows + 1) * 100)}px` }}>
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" className="solver-wires">
       {graph.edges.map(({ source, target }) => {
         const from = positions.get(source)
@@ -67,7 +74,7 @@ export default function FlowDiagram({ graph, selected, onSelect, enabled }: {
     </svg>
     {graph.nodes.map(node => {
       const pos = positions.get(node.id)!
-      const off = enabled[node.id] === false
+      const off = node.optional && enabled[node.id] !== true
       const terminal = !graph.edges.some(edge => edge.source === node.id)
       return <button key={node.id} type="button" className={`solver-node ${off ? 'is-off' : ''} ${terminal ? 'is-terminal' : ''}`}
         style={{ left: pos.x + '%', top: pos.y + '%', width: width + '%' }}

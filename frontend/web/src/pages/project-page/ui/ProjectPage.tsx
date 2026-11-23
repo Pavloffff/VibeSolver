@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, getApiClient, getErrorMessage } from '../../../shared/api/client'
 import type { ApiClient } from '../../../shared/api/client'
 import type { ImportStatus, ProjectIndexStatus, ProjectIndexType, ProjectModelSelections, ProjectResource, ProjectStats, Source, WorkspaceModel } from '../../../shared/api/types'
 import { useT } from '../../../shared/i18n'
+import type { TranslationKey } from '../../../shared/i18n'
+import { connectorLabel } from '../../../shared/i18n/catalogLabels'
 import { ImportCard, IndexingCard, ResourcesCard, StatsCard } from './ProjectCards'
 import { SourceBrowser } from './SourceBrowser'
 import MarkdownEditor from './MarkdownEditor'
@@ -15,27 +17,28 @@ interface Props {
   api?: ApiClient
   experimental?: boolean
   onBack: () => void
-  onOpenIssues: () => void
   onNameChange?: (name: string) => void
   launchError?: string | null
 }
 
-export default function ProjectPage({ sourceId, api = getApiClient(), experimental = false, onBack, onOpenIssues, onNameChange, launchError = null }: Props) {
-  const { t } = useT()
+export default function ProjectPage({ sourceId, api = getApiClient(), experimental = false, onBack, onNameChange, launchError = null }: Props) {
+  const { t, lang } = useT()
   const [source, setSource] = useState<Source | null>(null)
   const [stats, setStats] = useState<ProjectStats | null>(null)
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null)
   const [indexingStatus, setIndexingStatus] = useState<ProjectIndexStatus | null>(null)
   const [missingPolls, setMissingPolls] = useState(0)
   const [statusPollErrors, setStatusPollErrors] = useState(0)
-  const [error, setError] = useState<string | null>(launchError)
+  const [error, setError] = useState<string | { key: TranslationKey } | null>(launchError)
   const [uploading, setUploading] = useState<ResourceCategory | null>(null)
   const [generatingCategory, setGeneratingCategory] = useState<ResourceCategory | null>(null)
-  const [indexNotice, setIndexNotice] = useState<string | null>(null)
-  const [generationNotice, setGenerationNotice] = useState<string | null>(null)
+  const [indexNotice, setIndexNotice] = useState<TranslationKey | null>(null)
+  const [generationNotice, setGenerationNotice] = useState<TranslationKey | null>(null)
   const [generationNoticeCategory, setGenerationNoticeCategory] = useState<ResourceCategory | null>(null)
-  const [confluenceNotice, setConfluenceNotice] = useState<string | null>(null)
+  const [confluenceNotice, setConfluenceNotice] = useState(false)
   const [activeMarkdown, setActiveMarkdown] = useState<MarkdownResourceReference & { content: string } | null>(null)
+  const markdownDirty = useRef(false)
+  const markdownRequest = useRef(0)
   const [embeddingModels, setEmbeddingModels] = useState<WorkspaceModel[]>([])
   const [chatModels, setChatModels] = useState<WorkspaceModel[]>([])
   const [modelSelections, setModelSelections] = useState<ProjectModelSelections>({ indexing: null, documentation_generation: null })
@@ -79,8 +82,8 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
   }, [api, error, importStatus, missingPolls, source, sourceId])
 
   useEffect(() => {
-    if (missingPolls >= 6 && importStatus === null && error === null) setError(t('project.importNotStarted'))
-  }, [error, importStatus, missingPolls, t])
+    if (missingPolls >= 6 && importStatus === null && error === null) setError({ key: 'project.importNotStarted' })
+  }, [error, importStatus, missingPolls])
 
   useEffect(() => {
     let cancelled = false
@@ -185,7 +188,7 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
           setStatusPollErrors((count) => count + 1)
           if (statusPollErrors >= 4) {
             setImportStatus(null)
-            setError(t('project.importNotStarted'))
+            setError({ key: 'project.importNotStarted' })
           }
         } else {
           setError(getErrorMessage(requestError))
@@ -193,7 +196,7 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
       })
     }, 1600)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [api, importStatus?.progress, importStatus?.status, refreshStats, sourceId, statusPollErrors, t])
+  }, [api, importStatus?.progress, importStatus?.status, refreshStats, sourceId, statusPollErrors])
 
   const addResource = async (category: ResourceCategory, file: File, origin = 'uploaded', parentPath = '') => {
     if (source === null) return
@@ -257,7 +260,10 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
           },
         },
       })
-      if (activeMarkdown?.resource.id === resource.id) setActiveMarkdown(null)
+      if (activeMarkdown?.category === category && activeMarkdown.resource.id === resource.id) {
+        markdownDirty.current = false
+        setActiveMarkdown(null)
+      }
     } catch (requestError) {
       setError(getErrorMessage(requestError))
     } finally {
@@ -286,7 +292,10 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
           },
         },
       })
-      if (activeMarkdown?.category === category && removedIds.has(activeMarkdown.resource.id)) setActiveMarkdown(null)
+      if (activeMarkdown?.category === category && removedIds.has(activeMarkdown.resource.id)) {
+        markdownDirty.current = false
+        setActiveMarkdown(null)
+      }
     } catch (requestError) {
       setError(getErrorMessage(requestError))
     } finally {
@@ -294,13 +303,26 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
     }
   }
 
+  const canDiscardMarkdown = () => !markdownDirty.current || window.confirm(t('sourceBrowser.discardDraft'))
+  const closeMarkdown = () => {
+    if (!canDiscardMarkdown()) return
+    markdownRequest.current += 1
+    markdownDirty.current = false
+    setActiveMarkdown(null)
+  }
   const openMarkdown = async (category: ResourceCategory, resource: ProjectResource) => {
     if (source === null || resource.id === undefined) return
+    if (activeMarkdown?.category === category && activeMarkdown.resource.id === resource.id) return
+    if (!canDiscardMarkdown()) return
+    const request = ++markdownRequest.current
+    setError(null)
     try {
       const result = await api.getResourceContent(source.id, category, resource.id)
+      if (request !== markdownRequest.current) return
+      markdownDirty.current = false
       setActiveMarkdown({ category, resource, content: result.content })
     } catch (requestError) {
-      setError(getErrorMessage(requestError))
+      if (request === markdownRequest.current) setError(getErrorMessage(requestError))
     }
   }
 
@@ -316,7 +338,7 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
       indexingStatus?.indexes.find((index) => index.index_type === indexType)?.status !== 'completed',
     )
     if (missingIndex !== undefined) {
-      setGenerationNotice(t(missingIndex === 'code' ? 'project.indexCodeBeforeGeneration' : 'project.indexDocsBeforeGeneration'))
+      setGenerationNotice(missingIndex === 'code' ? 'project.indexCodeBeforeGeneration' : 'project.indexDocsBeforeGeneration')
       setGenerationNoticeCategory(category)
       return
     }
@@ -331,8 +353,7 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
       onNameChange?.(updated.name)
       const firstGenerated = result.resources[0]
       if (firstGenerated?.id !== undefined) {
-        const { content } = await api.getResourceContent(source.id, category, firstGenerated.id)
-        setActiveMarkdown({ category, resource: firstGenerated, content })
+        await openMarkdown(category, firstGenerated)
       }
     } catch (generationError) {
       setError(getErrorMessage(generationError))
@@ -363,14 +384,15 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
     try {
       await api.startProjectIndexing(sourceId, indexType)
       await refreshIndexingStatus()
-      setIndexNotice(t('project.indexQueuedMessage'))
+      setIndexNotice('project.indexQueuedMessage')
     } catch (requestError) {
       setError(getErrorMessage(requestError))
     }
   }
 
+  const errorText = error === null || typeof error === 'string' ? error : t(error.key)
   if (source === null) {
-    return <div className="project-loading"><button type="button" className="text-button" onClick={onBack}>← {t('project.back')}</button><p>{error ?? t('project.loading')}</p></div>
+    return <div className="project-loading"><button type="button" className="text-button" onClick={onBack}>← {t('project.back')}</button><p>{errorText ?? t('project.loading')}</p></div>
   }
 
   return (
@@ -378,17 +400,15 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
       <div className="project-heading">
         <div>
           <span className="eyebrow">{t('app.workspace')}</span>
-          <div className="project-title-row"><h1>{source.name}</h1><span className="badge">{source.type}</span><span className={`project-readiness ${indexingStatus?.ready ? 'ready' : 'pending'}`}><span className="readiness-dot" />{t(indexingStatus?.ready ? 'project.ready' : 'project.notReady')}</span></div>
+          <div className="project-title-row"><h1>{source.name}</h1><span className="badge">{connectorLabel(t, source.type)}</span><span className={`project-readiness ${indexingStatus?.ready ? 'ready' : 'pending'}`}><span className="readiness-dot" />{t(indexingStatus?.ready ? 'project.ready' : 'project.notReady')}</span></div>
           <p>{t('project.subtitle')}</p>
-          {!indexingStatus?.ready && <small className="project-readiness-hint">{t('project.finishIndexingBeforeIssues')}</small>}
         </div>
         <div className="project-heading-actions">
-          <button type="button" className="btn btn-primary btn-large" disabled={!indexingStatus?.ready} title={!indexingStatus?.ready ? t('project.finishIndexingBeforeIssues') : undefined} onClick={onOpenIssues}>{t('project.goToIssues')}</button>
           {githubUrl !== null && <a className="btn" href={githubUrl} target="_blank" rel="noreferrer">{t('project.openGithub')} ↗</a>}
         </div>
       </div>
 
-      {error !== null && <div className="error page-alert" role="alert">{error}</div>}
+      {errorText !== null && <div className="error page-alert" role="alert">{errorText}</div>}
       {importStatus?.status === 'failed' && (
         <div className="import-error-panel">
           <div><strong>{t('project.importFailed')}</strong><p>{importStatus.error ?? t('project.unknownImportError')}</p></div>
@@ -399,21 +419,20 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
       )}
 
       <div className="project-grid">
-        <ImportCard t={t} status={importStatus} onRetry={() => void startImport()} />
-        <IndexingCard t={t} indexes={indexingStatus?.indexes ?? []} canStart={canStartIndex} notice={indexNotice} onIndex={(indexType) => void startIndexing(indexType)} models={embeddingModels} selectedModelId={modelSelections.indexing} onModelChange={(modelId) => void changeModelSelection('indexing', modelId)} />
-        <StatsCard t={t} stats={stats} indexes={indexingStatus?.indexes ?? []} documentationCount={documentation.length} userFlowCount={userFlows.length} />
         <ResourcesCard
           t={t}
+          workspaceError={errorText}
           sourceBrowser={<SourceBrowser key={source.id} sourceId={source.id} api={api} t={t} />}
+          activeResource={activeMarkdown === null ? undefined : { category: activeMarkdown.category, id: activeMarkdown.resource.id }}
           documentation={documentation}
           userFlows={userFlows}
           uploading={uploading}
           generationEnabled={experimental}
           generatingCategory={generatingCategory}
-          generationNotice={generationNotice}
+          generationNotice={generationNotice === null ? null : t(generationNotice)}
           generationNoticeCategory={generationNoticeCategory}
-          confluenceNotice={confluenceNotice}
-          onAddConfluence={() => setConfluenceNotice(t('materials.confluenceStub'))}
+          confluenceNotice={confluenceNotice ? t('materials.confluenceStub') : null}
+          onAddConfluence={() => setConfluenceNotice(true)}
           generationModels={chatModels}
           generationModelId={modelSelections.documentation_generation}
           onGenerationModelChange={(modelId) => void changeModelSelection('documentation_generation', modelId)}
@@ -423,28 +442,32 @@ export default function ProjectPage({ sourceId, api = getApiClient(), experiment
           onDelete={(category, resource) => void deleteResource(category, resource)}
           onDeleteFolder={(category, path) => void deleteDocumentationFolder(category, path)}
           onGenerate={(category) => void generateMaterial(category)}
+          reader={activeMarkdown !== null && (
+            <MarkdownEditor
+              key={`${activeMarkdown.category}-${activeMarkdown.resource.id}`}
+              t={t}
+              resource={activeMarkdown.resource}
+              content={activeMarkdown.content}
+              isMarkdown={activeMarkdown.resource.type === 'markdown'}
+              candidates={[...documentation.map((resource) => ({ category: 'documentation' as const, resource })), ...userFlows.map((resource) => ({ category: 'user_flow' as const, resource }))].filter((reference) => reference.resource.type === 'markdown' && reference.resource.id !== activeMarkdown.resource.id)}
+              onRead={readMarkdown}
+              onSave={(content) => api.updateResourceContent(source.id, activeMarkdown.category, activeMarkdown.resource.id!, content)}
+              onApprove={activeMarkdown.category === 'user_flow' && activeMarkdown.resource.name.toLowerCase().endsWith('.json')
+                ? async () => {
+                    const result = await api.approveUserFlow(source.id, activeMarkdown.resource.id!)
+                    await refreshIndexingStatus()
+                    return result.content
+                  }
+                : undefined}
+              onDirtyChange={(dirty) => { markdownDirty.current = dirty }}
+              onClose={closeMarkdown}
+            />
+          )}
         />
+        <ImportCard t={t} lang={lang} status={importStatus} onRetry={() => void startImport()} />
+        <IndexingCard t={t} lang={lang} indexes={indexingStatus?.indexes ?? []} canStart={canStartIndex} notice={indexNotice === null ? null : t(indexNotice)} onIndex={(indexType) => void startIndexing(indexType)} models={embeddingModels} selectedModelId={modelSelections.indexing} onModelChange={(modelId) => void changeModelSelection('indexing', modelId)} />
+        <StatsCard t={t} lang={lang} stats={stats} indexes={indexingStatus?.indexes ?? []} documentationCount={documentation.length} userFlowCount={userFlows.length} />
       </div>
-          {activeMarkdown !== null && (
-        <MarkdownEditor
-          key={`${activeMarkdown.category}-${activeMarkdown.resource.id}`}
-          t={t}
-          resource={activeMarkdown.resource}
-          content={activeMarkdown.content}
-          isMarkdown={activeMarkdown.resource.type === 'markdown'}
-          candidates={[...documentation.map((resource) => ({ category: 'documentation' as const, resource })), ...userFlows.map((resource) => ({ category: 'user_flow' as const, resource }))].filter((reference) => reference.resource.type === 'markdown' && reference.resource.id !== activeMarkdown.resource.id)}
-          onRead={readMarkdown}
-          onSave={(content) => api.updateResourceContent(source.id, activeMarkdown.category, activeMarkdown.resource.id!, content)}
-          onApprove={activeMarkdown.category === 'user_flow' && activeMarkdown.resource.name.toLowerCase().endsWith('.json')
-            ? async () => {
-                const result = await api.approveUserFlow(source.id, activeMarkdown.resource.id!)
-                await refreshIndexingStatus()
-                return result.content
-              }
-            : undefined}
-          onClose={() => setActiveMarkdown(null)}
-        />
-      )}
     </div>
   )
 }

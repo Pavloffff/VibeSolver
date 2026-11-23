@@ -6,8 +6,8 @@
   "author": "Pavloffff",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.setup.json && node scripts/copy-setup.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.setup.json --noEmit",
     "copy-web": "node scripts/copy-web.mjs",
     "start": "electron .",
     "dev": "npm run build && npm run copy-web && electron .",

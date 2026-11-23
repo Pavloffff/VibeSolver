@@ -4,6 +4,7 @@ import type { ApiClient } from '../../../shared/api/client'
 import { SourceStatusBadge } from '../../../entities/source'
 import type { Source } from '../../../entities/source'
 import { useT } from '../../../shared/i18n'
+import { connectorLabel } from '../../../shared/i18n/catalogLabels'
 import SourceForm from '../../../features/add-source'
 
 interface Props {
@@ -106,7 +107,7 @@ export default function SourcesPage({ api = getApiClient(), onProjectSelected, o
                   }}
                 >
                   <td><button type="button" className="project-name-button" onClick={() => onProjectSelected?.(source.id)}>{source.name}</button></td>
-                  <td>{source.type}</td>
+                  <td>{connectorLabel(t, source.type)}</td>
                   <td>
                     {source.last_import !== null ? (
                       <SourceStatusBadge status={source.last_import.status} />

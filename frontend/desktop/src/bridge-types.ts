@@ -19,9 +19,13 @@ export interface SaveConfigResult {
 }
 
 export interface VibesolverBridge {
+  initialLanguage: string | null;
+  localServerUrl: string | null;
   getAppVersion(): Promise<string>;
   openSettings(): void;
+  openUiObserver(lang?: Lang): Promise<SaveConfigResult>;
   getConfig(): Promise<VibesolverConfig | null>;
+  setLanguage(lang: Lang): Promise<SaveConfigResult>;
   saveConfig(config: VibesolverConfig): Promise<SaveConfigResult>;
-  checkHealth(serverUrl: string): Promise<HealthCheckResult>;
+  checkHealth(serverUrl: string, lang?: Lang): Promise<HealthCheckResult>;
 }

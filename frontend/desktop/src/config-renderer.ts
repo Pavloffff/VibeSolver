@@ -1,4 +1,4 @@
-import { DEFAULT_LANG, isLang, LANGS, t, type Lang, type TranslationKey } from './i18n';
+import { DEFAULT_LANG, isLang, LANGS, t, type Lang, type TranslationKey } from './i18n.js';
 import type { AppMode, VibesolverConfig } from './bridge-types';
 
 const LANGUAGE_LABEL_KEYS: Record<Lang, TranslationKey> = {
@@ -118,8 +118,10 @@ function bootstrap(): void {
     }
     checkButton.disabled = true;
     setStatus(checkStatus, t('configScreen.statusChecking', lang), 'pending');
-    const result = await api.checkHealth(normalized);
+    const checkedLanguage = lang;
+    const result = await api.checkHealth(normalized, checkedLanguage);
     checkButton.disabled = false;
+    if (lang !== checkedLanguage) return;
     if (result.ok) {
       setStatus(checkStatus, t('configScreen.statusConnected', lang), 'ok');
     } else {
@@ -154,6 +156,8 @@ function bootstrap(): void {
     const value = langSelect.value;
     if (isLang(value)) {
       lang = value;
+      setStatus(checkStatus, '', 'pending');
+      setStatus(mainStatus, '', 'pending');
       applyTexts();
     }
   });

@@ -1,0 +1,43 @@
+.file-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 6px;
+}
+
+.file-picker-trigger {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.file-picker-trigger > input[type='file'] {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.file-picker-caption {
+  margin: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.file-picker-trigger > input:focus-visible + .file-picker-caption {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.file-picker-trigger > input:disabled { cursor: default; }
+.file-picker-trigger > input:disabled + .file-picker-caption { opacity: .5; }
+.file-picker-trigger > input[aria-invalid='true'] + .file-picker-caption { border-color: var(--danger); }
+.file-picker-name { min-width: 0; overflow-wrap: anywhere; }

@@ -13,8 +13,9 @@ beforeEach(() => {
 })
 
 describe('App mode screen', () => {
-  it('skips the mode screen when the electron bridge is present', () => {
+  it('skips the mode screen when the electron bridge is present', async () => {
     vi.stubGlobal('vibesolver', {})
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => '[]' }))
     render(
       <I18nProvider>
         <App />
@@ -23,6 +24,7 @@ describe('App mode screen', () => {
     expect(screen.queryByText('Choose the working mode')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Projects' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+    expect(await screen.findByText('Start with your first project')).toBeInTheDocument()
   })
 
   it('toggles between light and dark themes and remembers the selection', async () => {

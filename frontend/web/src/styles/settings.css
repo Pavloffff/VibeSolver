@@ -1,4 +1,9 @@
-.settings-page { max-width: 820px; }
+.settings-page { container-type: inline-size; }
+@container (min-width: 960px) {
+  .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: stretch; }
+  .settings-page .settings-section { margin-bottom: 0; }
+  .settings-page .settings-actions { grid-column: 1 / -1; margin-top: 0; }
+}
 .settings-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 30px; }
 .settings-heading p { max-width: 300px; margin-bottom: 3px; }
 .settings-section { margin-bottom: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 20px 22px; }

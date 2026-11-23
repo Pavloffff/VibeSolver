@@ -47,6 +47,10 @@ export function saveLang(lang: Lang): void {
   localStorage.setItem(LANG_STORAGE_KEY, lang)
 }
 
+export function initializeDesktopLanguage(lang = window.vibesolver?.initialLanguage): void {
+  if (typeof lang === 'string' && isLang(lang)) saveLang(lang)
+}
+
 export function getSettings(): AppSettings | null {
   const raw = localStorage.getItem(SETTINGS_STORAGE_KEY)
   if (!raw) {

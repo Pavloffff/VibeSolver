@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import FilePicker from '../../../shared/ui/FilePicker'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { getErrorMessage } from '../../../shared/api/client'
 import type { ApiClient } from '../../../shared/api/client'
 import type { TicketLogAttachment, TicketLogAttachmentStatus } from '../../../shared/api/types'
@@ -8,6 +9,9 @@ import type { TranslationKey } from '../../../shared/i18n'
 interface Props {
   ticketId: number
   api: ApiClient
+  disabled?: boolean
+  children?: ReactNode
+  onBusyChange?: (busy: boolean) => void
   onUnreadyChange: (ticketId: number, unready: boolean) => void
 }
 
@@ -20,8 +24,9 @@ const STATUS_KEYS: Record<TicketLogAttachmentStatus, TranslationKey> = {
   failed: 'issues.logStatusFailed',
 }
 
-export default function TicketLogAttachments({ ticketId, api, onUnreadyChange }: Props) {
-  const { t } = useT()
+export default function TicketLogAttachments({ ticketId, api, disabled = false, children, onBusyChange, onUnreadyChange }: Props) {
+  const { t, lang } = useT()
+  const hasAdditionalEvidence = children !== undefined && children !== null && children !== false
   const [attachments, setAttachments] = useState<TicketLogAttachment[]>([])
   const [busyId, setBusyId] = useState<number | 'upload' | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -68,19 +73,23 @@ export default function TicketLogAttachments({ ticketId, api, onUnreadyChange }:
       return
     }
     setBusyId('upload')
+    onBusyChange?.(true)
     try {
-      await api.uploadTicketLogAttachment(ticketId, file)
+      const attachment = await api.uploadTicketLogAttachment(ticketId, file)
+      if (attachment.status !== 'ready') onUnreadyChange(ticketId, true)
       refreshList()
     } catch (requestError) {
       setError(getErrorMessage(requestError))
     } finally {
       setBusyId(null)
+      onBusyChange?.(false)
     }
   }
 
   const retry = async (attachmentId: number) => {
     setError(null)
     setBusyId(attachmentId)
+    onBusyChange?.(true)
     try {
       await api.retryTicketLogAttachment(ticketId, attachmentId)
       refreshList()
@@ -88,12 +97,14 @@ export default function TicketLogAttachments({ ticketId, api, onUnreadyChange }:
       setError(getErrorMessage(requestError))
     } finally {
       setBusyId(null)
+      onBusyChange?.(false)
     }
   }
 
   const remove = async (attachmentId: number) => {
     setError(null)
     setBusyId(attachmentId)
+    onBusyChange?.(true)
     try {
       await api.deleteTicketLogAttachment(ticketId, attachmentId)
       refreshList()
@@ -101,6 +112,7 @@ export default function TicketLogAttachments({ ticketId, api, onUnreadyChange }:
       setError(getErrorMessage(requestError))
     } finally {
       setBusyId(null)
+      onBusyChange?.(false)
     }
   }
 
@@ -108,21 +120,25 @@ export default function TicketLogAttachments({ ticketId, api, onUnreadyChange }:
     <section className="issues-log-attachments" aria-labelledby="issues-log-title">
       <div className="project-card-heading">
         <div>
-          <h3 id="issues-log-title">{t('issues.logAttachmentsTitle')}</h3>
-          <p>{t('issues.logAttachmentsHint')}</p>
+          <h3 id="issues-log-title">{t(hasAdditionalEvidence ? 'issueWorkspace.rerunEvidence' : 'issues.logAttachmentsTitle')}</h3>
+          {!hasAdditionalEvidence && <p>{t('issues.logAttachmentsHint')}</p>}
         </div>
       </div>
 
-      <label className="issues-log-upload">
-        {t('issues.attachLogs')}
-        <input
-          type="file"
-          accept=".zip,.tar.gz,application/zip,application/gzip"
-          disabled={busyId !== null}
-          onChange={(event) => void upload(event)}
-        />
-      </label>
-      <p className="field-hint">{t('issues.logArchiveHint')}</p>
+      <div className="issues-log-evidence">
+        {children}
+        <div className="issues-log-picker">
+          <label htmlFor="issue-log-upload" className="issues-log-upload">{t('issues.attachLogs')}</label>
+          <FilePicker
+            id="issue-log-upload"
+            aria-describedby="issue-log-upload-hint"
+            accept=".zip,.tar.gz,application/zip,application/gzip"
+            disabled={disabled || busyId !== null}
+            onChange={(event) => void upload(event)}
+          />
+          <p id="issue-log-upload-hint" className="field-hint">{t('issues.logArchiveHint')}</p>
+        </div>
+      </div>
       {error !== null && <div className="error" role="alert">{error}</div>}
 
       {attachments.length === 0 ? (
@@ -133,18 +149,24 @@ export default function TicketLogAttachments({ ticketId, api, onUnreadyChange }:
             <li className="issues-log-row" key={attachment.id}>
               <div className="issues-log-info">
                 <strong>{attachment.filename}</strong>
-                <span>{formatSize(attachment.size_bytes)}</span>
+                <span>{t(attachment.size_bytes < 1024 ** 2 ? 'issueWorkspace.logSizeKiB' : 'issueWorkspace.logSizeMiB', {
+                  size: (attachment.size_bytes / (attachment.size_bytes < 1024 ** 2 ? 1024 : 1024 ** 2)).toLocaleString(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+                })}</span>
                 <span className={`badge issue-log-state-${attachment.status}`}>
-                  {t(STATUS_KEYS[attachment.status])}
+                  {t(STATUS_KEYS[attachment.status] ?? 'issues.unavailable')}
                 </span>
-                {attachment.error !== null && <span className="error">{attachment.error}</span>}
+                {attachment.error !== null && <span className="error">{attachment.error.startsWith('Не удалось поставить архив в очередь')
+                  ? t('issueWorkspace.logQueueError')
+                  : attachment.error.startsWith('Не удалось проиндексировать архив логов')
+                    ? t('issueWorkspace.logIndexError')
+                    : attachment.error}</span>}
               </div>
               <div className="issues-log-actions">
                 {attachment.status === 'failed' && (
                   <button
                     type="button"
                     className="btn btn-secondary"
-                    disabled={busyId !== null}
+                    disabled={disabled || busyId !== null}
                     onClick={() => void retry(attachment.id)}
                   >
                     {t('issues.logRetry')}
@@ -153,8 +175,8 @@ export default function TicketLogAttachments({ ticketId, api, onUnreadyChange }:
                 <button
                   type="button"
                   className="text-button"
-                  disabled={busyId !== null}
-                  aria-label={`${t('issues.logDelete')} ${attachment.filename}`}
+                  disabled={disabled || busyId !== null}
+                  aria-label={t('issueWorkspace.removeLog', { filename: attachment.filename })}
                   onClick={() => void remove(attachment.id)}
                 >
                   {t('issues.logDelete')}
@@ -166,9 +188,4 @@ export default function TicketLogAttachments({ ticketId, api, onUnreadyChange }:
       )}
     </section>
   )
-}
-
-function formatSize(sizeBytes: number): string {
-  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`
-  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
 }

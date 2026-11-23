@@ -1,3 +1,4 @@
+import type { Lang } from './i18n/types'
 export type BridgeAppMode = 'local' | 'remote'
 
 export interface BridgeConfig {
@@ -12,11 +13,15 @@ export interface BridgeResult {
 }
 
 export interface VibesolverBridge {
+  initialLanguage?: string | null
+  localServerUrl?: string | null
   getConfig(): Promise<BridgeConfig | null>
+  setLanguage(lang: Lang): Promise<BridgeResult>
   saveConfig(config: BridgeConfig): Promise<BridgeResult>
   checkHealth(serverUrl: string): Promise<BridgeResult>
   getAppVersion(): Promise<string>
   openSettings(): void
+  openUiObserver?(lang?: Lang): Promise<BridgeResult>
   selectFolder?(): Promise<string | null>
 }
 

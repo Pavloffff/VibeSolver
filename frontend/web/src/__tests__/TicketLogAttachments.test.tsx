@@ -108,3 +108,24 @@ describe('ticket log attachment API', () => {
     expect(uploadInit?.body).toBeInstanceOf(FormData)
   })
 })
+
+it.each([
+  ['en', 'Could not queue the archive.', /KiB$/],
+  ['ru', 'Не удалось поставить архив в очередь.', /КиБ$/],
+  ['zh', '无法将压缩包加入队列。', /KiB$/],
+])('localizes the archive size and stored queue failure in %s', async (lang, error, unit) => {
+  const api = {
+    listTicketLogAttachments: vi.fn().mockResolvedValue([{
+      ...QUEUED, status: 'failed', error: 'Не удалось поставить архив в очередь',
+    }]),
+  }
+  localStorage.setItem('vibesolver.lang', lang)
+  render(
+    <I18nProvider>
+      <TicketLogAttachments ticketId={17} api={api as unknown as ApiClient} onUnreadyChange={vi.fn()} />
+    </I18nProvider>,
+  )
+
+  expect(await screen.findByText(error)).toBeVisible()
+  expect(screen.getByText(unit)).toBeVisible()
+})

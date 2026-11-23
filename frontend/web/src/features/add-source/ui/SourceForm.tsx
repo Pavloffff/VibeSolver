@@ -1,9 +1,11 @@
-﻿import { useEffect, useState } from 'react'
+import FilePicker from '../../../shared/ui/FilePicker'
+import { useEffect, useState } from 'react'
 import { getApiClient, getErrorMessage } from '../../../shared/api/client'
 import type { ApiClient } from '../../../shared/api/client'
 import type { ConfigField, ConnectorInfo } from '../../../entities/source'
 import type { Source } from '../../../entities/source'
 import { useT } from '../../../shared/i18n'
+import { connectorFieldLabels, connectorLabel } from '../../../shared/i18n/catalogLabels'
 import { selectFolder } from '../../../shared/api/folderPicker'
 import { hasNativeFolderDialog } from '../../../shared/api/folderPicker'
 
@@ -26,6 +28,7 @@ export default function SourceForm({ api = getApiClient(), source, onCreated, on
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [archiveNames, setArchiveNames] = useState<Record<string, string>>({})
 
   useEffect(() => {
     let cancelled = false
@@ -85,9 +88,10 @@ export default function SourceForm({ api = getApiClient(), source, onCreated, on
     for (const field of fields) {
       if (source !== undefined && field.kind === 'password' && !(config[field.name] ?? '').trim()) continue
       if (field.required && !(config[field.name] ?? '').trim()) {
+        const { label } = connectorFieldLabels(t, type, field)
         missing[field.name] =
           field.kind === 'folder' ? t('errors.chooseFolder') :
-          field.kind === 'file' ? t('errors.chooseArchive') : t('errors.fillField', { field: field.label })
+          field.kind === 'file' ? t('errors.chooseArchive') : t('errors.fillField', { field: label })
       }
     }
     if (uploading) return
@@ -121,6 +125,7 @@ export default function SourceForm({ api = getApiClient(), source, onCreated, on
   const renderField = (field: ConfigField) => {
     const value = config[field.name] ?? ''
     const fieldError = fieldErrors[field.name] ?? ''
+    const { label, hint } = connectorFieldLabels(t, type, field)
     const commonProps = {
       value,
       onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
@@ -129,17 +134,23 @@ export default function SourceForm({ api = getApiClient(), source, onCreated, on
     let control
     if (field.kind === 'file') {
       control = (
-        <input
-          type="file"
+        <FilePicker
           accept=".zip,.tar.gz,application/zip,application/gzip"
-          className={fieldError !== '' ? 'input-error' : undefined}
+          aria-label={label}
+          aria-invalid={fieldError !== '' || undefined}
+          disabled={uploading || saving}
+          selectedFileName={archiveNames[field.name]}
           onChange={(event) => {
-            const file = event.target.files?.[0]
+            const file = event.currentTarget.files?.[0]
+            event.currentTarget.value = ''
             if (!file) return
             setFieldErrors((prev) => ({ ...prev, [field.name]: '' }))
             setUploading(true)
             void api.uploadArchive(file).then(
-              ({ upload_key }) => setFieldValue(field.name, upload_key),
+              ({ upload_key }) => {
+                setFieldValue(field.name, upload_key)
+                setArchiveNames((prev) => ({ ...prev, [field.name]: file.name }))
+              },
               (uploadError: unknown) =>
                 setFieldErrors((prev) => ({ ...prev, [field.name]: getErrorMessage(uploadError) })),
             ).finally(() => setUploading(false))
@@ -180,8 +191,6 @@ export default function SourceForm({ api = getApiClient(), source, onCreated, on
         />
       )
     }
-    const label = field.name === 'upload_key' ? t('sourceForm.archiveFile') : field.label
-    const hint = field.name === 'upload_key' ? t('sourceForm.archiveHint') : field.hint
     return (
       <label key={field.name}>
         {field.required ? `${label} *` : label}
@@ -198,17 +207,18 @@ export default function SourceForm({ api = getApiClient(), source, onCreated, on
         {t('sourceForm.typeLabel')}
         <select
           value={type}
-          disabled={source !== undefined}
+          disabled={source !== undefined || uploading || saving}
           onChange={(event) => {
             setType(event.target.value)
             setConfig({})
+            setArchiveNames({})
             setFieldErrors({})
           }}
         >
           <option value="">{t('sourceForm.typePlaceholder')}</option>
           {connectors.map((connector) => (
             <option key={connector.type} value={connector.type} disabled={!connector.ready}>
-              {connector.type}
+              {connectorLabel(t, connector.type)}
               {connector.ready ? '' : ` (${t('sourceForm.connectorUnavailable')})`}
             </option>
           ))}

@@ -20,6 +20,8 @@ npm ci
 npm run dev
 ```
 
+Команда `npm run build` отдельно собирает главный процесс Electron и модули экрана настройки. `npm run typecheck` проверяет обе части. Экран настройки входит в установщик.
+
 Для горячей перезагрузки веб-интерфейса поднимите `npm run dev` в `frontend/web` и запустите Electron с переменной окружения `ELECTRON_DEV_URL=http://localhost:5173`.
 
 ## Сборка установщика Windows
